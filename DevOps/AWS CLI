@@ -1,0 +1,18 @@
+AWS CLI Commands
+--------------------- 
+
+S3 
+--------
+
+aws s3 ls  --> for listing of buckets 
+aws s3 mb s3://<bucket_name> --> creating a bucket 
+aws s3 mb s3://<bucket_name> --region <region_name> --> if above command gives error beacus of location constrainit then use this 
+
+aws S3 cp <file_name/names> s3://<bucket_name> --> uploading file/s from local to aws s3 bucket 
+aws s3 ls s3://<bucket_name> ---> how to see the objects in the s3 bucket 
+
+aws s3 cp --recursive <folders/filenames/path> s3://<bucket_name>  --> this is to copy multiple documents in one go 
+aws s3 sync <folders/filenames/path> s3://<bucket_name> --> sync is smarter than cp as it looks for the chnages before copying
+
+aws S3 rm <file_name/names> s3://<bucket_name> --> this is to remove file/s from aws S3 bucket 
+aws S3 rm --recursive <file_name/names> s3://<bucket_name> --> this is to remove file/s from aws S3 bucket

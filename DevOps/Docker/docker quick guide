@@ -1,0 +1,494 @@
+--- docker qucik stuff ------------------
+
+DOCKER CONTAINERS
+========================
+
+image - the application which we want to run 
+container - teh running instance of the image as a process 
+
+some commands tpo check docker installed and woring fine on your machine
+
+** docker version 
+
+** docker info
+
+** docker 
+
+docker's default image regisry (where images are stoored) is call Docker hub
+
+to run a container ****
+
+** docker container run --publish 80:80 nginx --> it will leave container running in the fore ground (ctrl +c to get out of it)
+
+** docker container run --publish 80:80 --detach nginx ---> using detach it will let the container run in background
+
+publish here exposed the port 80 (First half) of the local machine to container port 80 (second half).
+
+** docker container stop <container_id> ---> this will stop the container (we don't need to copy full id, as far as we can type 3-4 charaters to identify uniquely
+
+** docker container ls or ** docker ps --> to list all the running container 
+
+** docker container ls -a  or ** docker ps -a --> this will show all the running and stopped conatiner 
+
+container ids and names should be unique. container ids are created for us but names also should be unique so docker engine assignes some random names
+for an open list of hackers and scientist 
+
+** docker container run --publish 80:80 --detach --name webhost nginx --> running a container with a name
+
+what if we want to assign a port dynamically 
+---------------------------------------------
+docker container run -P --detach --name webhost nginx (-P will automatically map any network port inside it to a random high port within an ephemeral port range on your Docker host)
+
+docker container run -p 80:80 --detach --name webhost nginx (if you want to specify a range of host ports to bind a container port)
+
+How to see logs of a running container
+--------------------------------------------
+
+** docker container logs <name or id of the container> or docker logs <name or id of the container>
+
+some more commands to check on running containers 
+
+** docker container top <name or id of the container> (lists running processes in specific container)
+
+Stoping and Removing doker containers (remember - A running conatiner can't be removed)
+
+** docer container stop <name or id of the container> (we can stop/remove multiple containers in one go by giving thier names/container_ids)
+
+** docer container rm <name or id of the container> (we can stop/remove multiple containers in one go by giving thier names/container_ids)
+
+** docer container rm -f  <name or id of the container> (we can stop/remove multiple containers in one go by giving thier names/container_ids) (-f is used for running container)
+
+** docker container kill <name or id of the container> 
+
+** docker container logs -f <name or id of the container> ( to see the live logs )
+
+** docker container prune (this is to remove all the stopped container )
+
+** docker container pause <name or id of the container> (to pause the container)
+
+** docker container pause <name or id of the container> (to unpause the container)
+
+
+Thinsg below happen when we run docker container:
+-----------------------------------------------------
+1) Docker looks that image locally in image cache, if doen't find anything
+2) Then it looks in remote image repository (Docker Hub)
+3) Downloads the latest version (if there is not tag defined)
+4) Creates a container based on the image and prepares to start
+5) Gives a virtual IP on a private Network inside docker engine
+6) Opens up port 80 on host an forwards to port 80 in container ( -p 80:80 )
+7) Starts container by using the CMD in the image Dockerfile
+
+Containers are not mini-VMs
+
+1) They are just processes
+2) Limited to what resounces they can access 
+3) Exit when processes stop 
+
+What is happening inside of a container:
+
+docker container top - process list in one container 
+docker container inspect - details of one container config 
+docker container stats - performance stats for all conatiners 
+
+Getting a shell inside of ubuntu container
+
+** docker conatiner run -it --name shell ubuntu bash (bash is the shell in which we want to get in) 
+once exited the shell how to get back in 
+
+** docker container start -ai <name or id of the container>
+
+what if we want to go/get in a running container use -exec commands
+
+** docker conatiner exec -it mysql bash 
+
+Networking in containers (defaults)
+-----------------------------------------------------------------------------------------------------------------
+1) Each container connected to a private virtaul network "bridge"
+2) Each Network routes through NAT firewall on Host IP 
+3) All containers on a virtual network can talk to each other withot -p
+
+Defaults work well in many cases, but easy to swap out parts to customize it 
+
+Customization we could do with container network
+-----------------------------------------------------
+
+1) make new virtual networks 
+2) Attach containers to more than one virtual network (or now)
+3) skip virtual networks and use host IP ( --net=host)
+4) use different Docker network drivers to gain new abilities 
+
+
+Docker networking commands 
+-------------------------------------
+
+** docker network ls 
+** docker network create -- driver <network_name>
+** docker container run -d --network <network_name> --name webhost nginx (running a container in a created network)
+** docker netwrok connect <name or id of the container> (dynamically assigns a NIC in a container to exiting virtual network) (mutiple container can be asigned )
+** docker network disconnect <name or id of the container> (dynamically removes a NIC in a container on a specific  virtual network)
+
+Docker deamon has a built-in DNS server that container use by default 
+
+1) container shouldn't rely on Ip's for inter-communications 
+2) DNS for friendly names is built-in if you use custom network not the default bridge newtwork
+
+Links
+------
+
+Links allow containers to discover each other and securely transfer information about one container to another container
+
+** docker run -d -P --name web --link db:db training/webapp python app.py
+--link <name or id>:alias
+
+************************************************************************************************************************************************************************************
+
+DOCKER IMAGES 
+========================================================================
+Docker image contains 
+
+1) App binaries and dependencies
+2) Metadata about the image data and how to run the data 
+3) It's not a complete OS. No kernel, kernel module (e.g drivers)(all of these are provided by docker host)
+4) small as one file like a golang static binary
+5) big as ubuntu distro with apt, apache, PHP and more installed 
+
+Docker hub - Repositiory for docker where we can keep our images, can download 
+
+** docker image ls
+** docker image history <container_name or img_id:tag> or ** docker history <container_name:tag>
+** docker image inspect <container_name or img_id:tag>
+
+
+6) Images are madeup of filesystem chnages and metadata called Layers
+7) Each layer is uniquely identifed and only stored once on a host
+8) this saves storage space on host and transfer time ti push/pull
+9) A container is justa single read.write layer on top of image 
+
+** docker image push <imagename:tag> (this will push the image to Docker hub or repository)
+** docker image pull <imagename:tag>  (this will pull the image to Docker hub or repository)
+
+Tagging gives images names 
+
+docker image tag <existing_imagename:tag> <new_imagename:tag>
+
+Searching/history/inspacet Images
+
+** docker search <image_name>
+** docker inspect <image_name>
+** docker history <image_name>
+
+command to login to docker hub 
+
+** docker login (it saves the password here /rrot/.docker/config.json)
+** docker log out 
+
+if you want to save a container and make it as an image for later use 
+
+** docker commit 2d7f9228e6a5 narender046/testimage:v1
+
+to remove images 
+
+** docker rmi <imagename:tag or img_id>
+** docker image remove <imagename:tag or img_id>
+
+DOCKER FILE
+----------------------------------------------------------------------------------------
+
+Dockerfile - D should be captial 
+
+the below are some important parts of a Dockerfile
+
+FROM                      --> This statement tells which image to use as a base (download/start from) ** It must be the first command in Dockerfile
+
+MAINTAINER                --> Defines the author of this Dockerfile (This person should be contacted in case of issues or bugs in Dockerfile)
+
+ENV                       --> Sets environment variables both during build and running the result 
+
+WORKDIR                   --> Sets the directory the container starts in
+
+USER                      --> Sets which user the container will run as 
+
+RUN                       --> Runs the commnad line, waits for it to finish and saves the results. 
+
+ADD                       --> It Adds local files/contents of tar archives/URLs 
+
+EXPOSE                    --> Maps Port into the container 
+
+ENTRYPOINT                --> Specifies the start of the command to run
+
+VOLUME                    --> Defines shared or ephemeral volumes ( Avoid defining shared folders in Dockerfiles)
+
+CMD                       --> Species the whole command to run ( if user gives some explicit command this will be replaced by user given command )
+
+********************************************************************************************************************************************************************************************************
+Networking in brief & in containers
+=============================================
+
+Ethernet: Moves "frmaes" on a wire (or Wi-Fi)
+
+IP Layer: moves the Packets on a local network
+
+Routing : forwards packets between networks 
+
+Ports : address particular programs on a computer 
+
+
+1) Docker uses Bridges to create virtual networks in your computer. These are software switches and control Ethernet layer
+
+2) Optional -- If we want to turn off the protection with below command 
+
+** docker run -rm --net=host <options> <imagename> command
+
+3) Routing : Creates "Firewall" rules to move packets between networks. This is called NAT.
+             Chnage the source address on the way out and destination address on the way back in.
+			 
+** sudo iptables -n -L -t nat
+
+4) Exposing a port in docker is just port forwarding
+
+5) Namspaces allow processes to be attached to private network segments. These private networks are bridged into a share network with the rest of the container.
+   container have virtual network "cards". 
+   Containers get thier own copy of the networking stack (Namspaces responsible for isolation of running process and limiting the system resources)
+
+***** cgroup is the linux kernel feature essential for container process isolation
+
+***********************************************************************************************************************************************************************************************
+DOCKER CONTAINERS DATA
+=================================
+
+1) Containers are usually immutable (unchnaging) and ephemeral (temporary or disposable)
+2) " immutable infrastructure: : only redploy container, never chnage a running container 
+
+Two main types:
+
+a) Persistent volumes - It remains on the host even if container gets removed or killed
+b) Ephemeral volumes - It only exists untill any of the container is using them, if no container uses them it will be no more available 
+   Example :  ** docker container run -it -v /shared-data ubuntu bash (here ?shared data is inside container)
+              ** docker container run --name myhost -it --volumes-from /shared-data ubuntu bash (this new container uses the /shared-data created by conatiner above)
+**** when no container will use /shared-data -->it will no longer be available
+
+Docker give us ability for persistent data also in two ways:
+A) Named Volumes - These are like shared folder (the virtual "discs" to store and share data)
+   Example :  docker container run -d --name db -v mysql-data:/var/lib/mysql mysql (here mysql-db is the name of the volume)
+B) Bind Mounts -  This allows us to attach an existing directory on your host to a directory inside fo acontainer
+   Example : docker container run -d --name webserver -P -v $(pwd)://usr/local/sbin nginx (here $(pwd) is the curent working directory in docker host, can choose anytother path alsofrom docker host)
+   
+List volumes 
+
+** docker volume ls 
+
+Delet volumes 
+
+** docker volume rm <volume name>
+
+Create volume generally it is used when we want to specify a driver or label for the volume.
+
+** docker volume create 
+
+******************************************************************************************************************************************************************************************
+
+Docker monitoring 
+==================================
+
+** docker top <container_id/container_name> 
+
+** docker stats <container_id/container_name>
+
+** docker system df ( id will give the deials about the disk used by docker objects - images, container, volumes etc )
+
+** docker system events (this will give detials about the things happening in docker like stopping, running removinging , killing of container etc)
+
+** docker system prune ( this will remove cotainers, n/w not used by any container, all dangling images, or without at least one container associated to them) 
+
+** docker container run -p 6000:5000 -d -m 512m <image_name:tag> ( -m tag is for memory so here it will only use 512 mb memory as the upper limit)
+
+** docker container run -p 6000:5000 -d -m 512m --cpu-quota=50000 <image_name:tag> (--cpu-quota is to assign the CPu to thr running quota, 100000 is the full CPU limit)
+
+
+docker compose 
+=======================
+
+** docker-compose up  (simple start of docker compose yaml file containing multiple contianers as services)
+
+** docker-compose up -d (starting docker compose in detached mode) 
+
+** docker-compose config ( this to check if the yAML is correct as well as a quick check on the config file)
+
+** docker-compose events (this is to see the events )
+
+** docker-compose top ( it will give the process from all the container from the yaml file)
+
+** docker-compose pause ( pause all the container from the yaml file)
+
+** docker-compose unpause ( pause all the container from the yaml file)
+
+** docker-compose down  (Stops containers and removes containers, networks, volumes, and images created by docker-compose up command)
+
+
+Important concepts 
+======================================
+
+EntryPOINT vs CMD 
+---------------------
+
+ENTRYPOINT - if entrypoint is given then that command will be executed always however if you want to give any command while runing the container use flag --entrypoint 
+for CMD  - if any additional command is given (from console) while running the container then that command will take precedence
+
+
+
+
+
+Microservices are:
+
+1) Which are exposed as Restful web services 
+2) additionally, Small well choosen chosen Deployable unit 
+3) & these should be closud enabled 
+
+Microservices architecture Advantages:
+
+1) New technology and process adaptation - Communication is based on simple messages 
+2) dynamic scalling 
+3) faster release cycles (new features to new world 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

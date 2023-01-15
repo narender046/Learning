@@ -1,0 +1,108 @@
+Microservices
+=================================
+
+1) Monolith:
+----------------
+
+The traditional architecture 
+
+Users ------> UI Tier -----> Backend API/Tier -------> Database (these kind of architectures are known as Monolith)
+
+1) Assume If we want to change any partial fuctionality or feautre or business funtion in Backend Tier we need to deploy the Whole Backend Tier.
+2) It brings risk to other part of business functions 
+3) using microservices we can elimnate this risk 
+
+A) Strangler Application Pattern
+------------------------------------
+
+1) it has analogy to a tree called Strangler fig
+
+3 Phases to it 
+
+1) transform  - it grows slowly down wards (Create 1 microservice (small business function) and its been supported by monolith application)
+2) coexists - It exists with the tree on which started groing (once we become confident with 1 microservice we create 2 or more microservice )
+3) Eliminate - it kills the host and survis alone (keep doing until the microservices have individula data route and then eliminate monolith app)
+
+Next Step - Identify the interaction points in the monilith app
+--------------
+HTTP API 
+File listner 
+queue listner 
+
+for HTTP API interactions points 
+------------------------------------
+Once identified the intercation point we should route the some traffic to new micorservice and rest should continue to go monoliyh app
+if microservice works fine and we care confident then we can route the full trafic to the microsservice and eliminate the specific monith business function
+
+for other file and queue or other types 
+-----------------------------------------
+
+The microservices should be re configured 
+
+
+
+Identifying an capability suitable to transitioning a microservice 
+----------------------------------------------------------------------
+Identify core domain concepts then group intercation points around these core concepts 
+
+1) Choose the low usgae to mitigate risk 
+2) simple to refactor the code 
+3) Will reduce future releases 
+4) Good test coverage 
+5) Smaller to reduce works
+6) Larger to simplify integration
+
+Now creating a Microservice :
+
+User the same tech stack for new microservice 
+---------------------------------------------------
+1) Easier to lift, shift and refactor
+2) aqoid chnaging software development stack
+3) transition to microservices before chnaging tech Stack
+4)The same softeare development stack simplifies rollbak by avoiding subtle chnages in data 
+
+Now are Microservice (after building the new code) is reday 
+
+Shared Database 
+--------------------------------
+
+Missing dependencies 
+--------------------------
+Microservie to monolith ( code chnages (refactored) done at microservice end to use monolith capabilities )
+Temporal coupling 
+monilith to microservice (now code chnages(refactored) done at monolith end to use microservices capabilities )
+
+Toggle pattern 
+------------------
+
+
+completing the Transition
+------------------------------
+
+
+1) Re-routing the Traffic to Microservice
+2) Eliminate the legacy version of the monolith 
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+

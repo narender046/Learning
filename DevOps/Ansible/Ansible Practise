@@ -1,0 +1,154 @@
+Ansible Practise 
+=========================
+
+play1.yml
+--------------------
+
+---
+
+# This is my first ever yaml file for ansible
+
+- hosts: localhost
+  name: Ensure that the file reaches to the detsination
+  gather_facts: false
+  tasks:
+  - copy: src="../inventory.txt" dest="/tmp/inverntory.txt"
+  
+*****************************************************************************************************************************
+
+play2.yml
+
+---
+
+# This is to update packages
+
+- hosts: localhost
+  name: this is to ensusure the packages gets installed or updated
+  tasks:
+  - apt: name=wget state=latest
+# - apt:
+#     name: sublime-text
+#     state: latest
+
+
+*********************************************************************************************************************************
+
+play3.yml 
+
+---
+
+# This is we are installing git 
+
+- name: Ensure the git software is installed
+  host: localhost
+  tags: [ 'install-git']
+  tasks:
+  - package: name=git state=latest
+    when: ansible_os_family == 'RedHat'       # when is used for conditions
+    become: yes                               # becomes is used to run the commands using sudo 
+
+- name: Ensure ~/.gitcponfig copied from master.config
+  host: node1
+  tasks: 
+  - name: first show no config in targets 
+    command: git config --global --list
+    ignore_errors: yes # we know git config fails so ensure we don't stop playbook execution with ignore_errors 
+	register: git_config_before               # Ansible register is a way to capture the output from task execution and store it in a variable
+	
+  - name: show git config output always - verbosity 0 is default for debug module 
+    debug: var=git_config_before
+	
+  - name: tried and true copy module with master.gitconfig from previously in the course
+    copy: src="../inventory.txt" dest="/tmp/inverntory.txt"
+	
+  - name: show newly added configuration
+    command: git config --global --list 
+	ignore_errors: yes
+	register: git_config_after
+	
+  - name: ensure to show git config after with debug - this time only show stdout_lines
+    debug: var=git_config_after.stdout_lines   # This module prints statements during execution and can be useful for debugging variables or expressions 
+	                                             without necessarily halting the playbook. Useful for debugging together with the ‘when:’ directive.
+												 and stdout_lines will print the subset of the output only the stdout plines part from the output from debug 
+	
+****************************************************************************************************************************************************************	
+
+play4.yml
+
+---
+
+# This is updating all the webservers
+
+- name: We are updating all the webservers 
+  hosts: webservers:loadbalancers 
+  become: true
+  tasks:
+  - name: running the yum command to update the servers 
+    yum: name=* state=latest
+	
+***************************************************************************************************************
+
+play5.yml
+
+---
+
+# installing services on our webservers
+
+- name: installing apache HTTP services on the webservers
+  hosts: webservers
+  become: true
+  tasks:
+  - name: installing apache HTTP services
+    yum: name=httpd state=present 
+	yum: name=php state=present
+  - name: Ensure apache is installed 
+    service: name=httpd state=started enabled=yes  
+
+  
+- name: installing apache HTTP services on the webservers
+  hosts: localhost
+  become: true
+  tasks:
+  - name: installing apache HTTP services
+    yum: 
+	 - httpd
+     - php
+	state: present
+
+**********************************************************************************************************************
+
+play5.yml
+
+---
+
+# 
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	

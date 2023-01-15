@@ -1,0 +1,1675 @@
+Ansible
+=========================
+
+1) Ansible is an open source tool that enables automation, configuration and orchestartion of infrastructure.
+2) It makes your job easier 
+        a) Automating deployment of applications 
+		b) easily manage multi server systems 
+		c) Make configurations one time 
+		d) Reduces all around complexity 
+3) It Introduces Infrastructure as a code 
+        a) Built out entire systems in code 
+		b) Store all code in source control 
+		c) Roll Back chnages if needed 
+		d) Share code with other team members 
+4) Builds confidents
+        a) Produce reliable and repeatable systems
+		b) Ensure technologies and configurations are properly setup 
+		c) Reduces human error and other risks. 
+5) Simple to integrate 
+        a) Simple to install and integrate into your current setup
+		b) Eaxy to learn sytntax 
+		c) Start automating configuration and infrastructure in minutes 
+6) Other key features 
+        a) written python 
+		b) Script commands Using YAML
+		c) Sends commands to nodes via SSH 
+		d) Commands are exectited sequentially on each node 
+		e) Each nodes runs commands in parallel 
+		f) Ansible is owned by Red Hat
+		g) Red Hat is owned by IBM 
+
+Summary of Above 
+-------------------------
+Ansible is a tool that can help us achieve reliable and repeatable deployments, infrastructure updates, and configuration management that can be managed in source control 
+Alows you to control fleets of servers from a single control server via SSH 
+Uses YAML syntax creating a low learning curve 
+Updates and chnages can be ran multiple times without effective previous states.
+Ensures reliability and confidence where each environment will always be in the same state running the same version of technologies.
+Ansible is not the only but is powerful and can be implemented to fit a wide range of technology stacks 
+
+Ansible commands 
+--------------------
+
+** ansible-doc -t connection -l
+** ansible-doc --type connection --list 
+
+Ansible ad-hoc command
+------------------------
+
+
+
+Why, When and Where to use Ansible 
+==========================================
+
+1) Mass Deployments - Ansible helps solves the Problem of manually updating server one by one
+
+2) Scalling - Ansible can be used as a configuration management tool to ensure identical environments when scalling to meet demands
+
+3) Migrating Environments - Ansible can be used as a tool for migrating applicatiosn from integration, testing and production in a reliable and dependable way 
+
+4) Failure Prevention - Ansible can be used as a tool for reviewing chnage logs and rolling back applications if failure do occur.
+
+
+Ansible vs Other Tools 
+=============================
+
+1) Installation Process - Ansible --> Installed on a single machine | Others --> Install agents on all machines 
+
+2) Push vs Pull --> Ansible --> Push based setups push out configuration chnages 
+                    Others --> Pull based setups constatntly pull from a central server for configuration chnages 
+
+3) Scripting Syntax --> What type of systax is used for creating and executing changes Ansible --> Uses YAML syntax | Puppet --> Uses Puppet DSL as syntax
+                        Chef --> Uses Ruby as syntax | Salt --> Uses YAML Syntax 
+
+4) Installation requirements  --> What type of OS does the control instance need to Run on. Ansible and Others ---> Linux/Unix
+
+Others = Puppet, Chef, salt 
+
+************************************************************************************************************************************************************************
+
+Setting Up Environment 
+================================
+
+1) Setup Inventory - Create sandbox servers that will need to be configured and managed throughout the course using Ansible 
+
+2) Installing Ansible - Install Ansible locally on your machine. This is where we will run Ansible commands and playbooks to manage our inventory servers
+
+3) Ensure End to End - Confirm that we have Ansible setup properly and are able to communicate with out inventory server via SSH.
+
+Our Environment for learning 
+==================================
+
+1) Simple two tier system with multiple web server and single load balancder 
+2) Use Ansible to install packages, manage configurations, patches etc.
+3) Must be ale to SSH into each 
+4) Need at least 3 Vms to start with 
+
+SetUp inventory 
+----------------------
+Two types of Inventory:
+-------------------------
+
+1) Static Inventory 
+2) Dynamic Inventory 
+
+Create sandboxe server that will need to configured and managed throughout the course using Ansible
+
+1) Inventory, child and node server s naming can be used interchnageably.
+2) These are the servers we will configure using Ansible throughout the course 
+
+
+Installing Ansible
+---------------------------
+
+Installing Ansible locally on your control machine. This is where we will run Ansible commands and Playbooks to manage our node servers 
+
+ 1) The control machine that we will run Ansible commands from 
+ 2) Preferably Linux/Unix based 
+ 3) You will need python 2.x or 3.x installed 
+ 4) Use the following commands to install 
+ 
+# Installing pip 
+
+** sudo easy_install pip
+
+# Installing Ansible
+
+** sudo pip install ansible 
+
+
+Installing Ansible on Windows 
+-------------------------------------
+
+1) install the windows subsystem for Linux 
+
+https://docs.microsoft.com/en-us/windows/wsl/install-manual
+https://docs.microsoft.com/en-us/windows/wsl/install
+
+Ensure End-to-End
+----------------------
+
+Confirm that we have Ansible set up properly and are able to communicate with our child servers via SSH
+
+ 1) Last step is to ensure we hve communication to our inventory servers 
+ 2) Simply SSH into one (or all) for your instance and confirm 
+ 3) you are all set! 
+
+SetUp Inventory File 
+===========================
+
+Before running our first commands, we need to give Ansible reference to our inventroy server we want to execute commands on 
+
+1) Create an inventory file in which contains your inventroy server information. This file lists the hostnames and groups 
+2) Can be a static file or dynamic 
+3) The inventory file can include inventroy specifc parameters 
+4) Default inventory is located in the /etc/ansible/hosts
+5) Reference a difference inventory by using the -i <path> option in the command line 
+
+** ansible -i hosts-dev --list-hosts all (hosts-dev here is the file which conatins the host information and i flag is for inventory)
+
+Example of inventory file
+---------------------------------
+
+# hosts-dev 
+
+[webservers]
+weirdo.site.com:5309 ---> post can also be defined in case of non standard port
+app2.site.com
+
+[loadbalancers]
+lb ansile_host=12.24.48.96 ----> can create aliases 
+
+Ansible configuration
+============================
+
+Oftwen we have the need to configure our local Ansible environment with global specific properties associated with pour setup 
+
+1) Creating a configuration file (ansible.cfg) to control your local Ansible environmental settings 
+2) The configuration file can include environment-specific parameters to global Ansible commands ran 
+
+3) Configuration file will search in the following order:
+
+ANSIBLE_CONFIG (environment variable if set)
+ansible.cfg (in the current directory)
+~/.ansible.cfg (in the home directory)
+/etc/ansible.ansible.cfg 
+
+once the ansible.cfg is set up then the below commands can run without passing inventory flag 
+
+** ansible  --list-hosts all
+** ansible  --list-hosts webservers    (webservers is a group in inventory file)
+** ansible  --list-hosts loadbalancers (loadbalancers is a group in inventory file)
+
+Creating aliases in inventory file and running commands after that then output will be differenet 
+
+** ansible  --list-hosts webservers
+** ansible  --list-hosts loadbalancers
+** ansible  --list-hosts "*"
+** ansible  --list-hosts webservers:loadbalancers
+** ansible  --list-hosts \!control 
+** ansible  --list-hosts webservers[0]
+
+*************************************************************************************************************************************************************************
+
+Ansible Tasks
+=================
+
+Ansible task are a way to run adhoc commands agains our inventory in a one-line single executable tasks are the basic building blocks 
+of Ansibles' execution and configuration
+
+1) Commands consist of the the Ansible command, options, and host-pattern 
+2) Example of pinging all the hosts associated with our inventroy 
+3) The result returned will gives us important information about the execution on the end host  
+
+** ansible options <host-pattern>
+** ansible -m ping all  
+      |     |   |   |
+      |     |   |   |
+    ansible |   |  inventory
+    command |   |
+            |   |
+        module  |
+        flag    |
+               module
+			   name
+
+** ansible -m ping all ---> this command will fail for the EC2 instances , and we need to set up few Global config parameters in ansible.cfg file.
+ 
+remote_user = ec2-user 
+private_key_file = ~/.ssh/demo-ansible-key-pair.pem
+host_key_checking = False
+
+# Windows only Users
+[ssh_connection]
+ssh_args = -o ControlMaster=no
+
+
+** ansible -m ping all ---> this is successful now.
+** ansible -m shell -a uname webservers:loadbalancers ---> Success! the return code is 0  
+** ansible -m command -a "/bin/flase" \!local  ---> Failure :( as the return code is non zero 
+
+Ansible Modules
+---------------------
+
+https://docs.ansible.com/ansible/2.9/modules/modules_by_category.html
+
+Ansible Ad-Hoc commands using modules
+---------------------------
+
+** ansible -m copy -a "src=inventory.txt dest=/tmp/inventory.txt" localhost ---> this command will copy the file from src to destination using copy module
+** ansible -m copy -a "src=inventory.txt dest=/tmp/inventory.txt" --check localhost --> this command will be treated as dry run and  will not make chnages 
+** ansible -m copy -a "src=inventory.txt dest=/tmp/inventory.txt" --diff localhost --> this command will show us what is the difference between the src file and dest file
+** ansible -m copy -a "src=inventory.txt dest=/tmp/inventory.txt" -diff localhost --> thi command will copy the file and show the difference if any 
+** ansible -m homebrew -a "name=bat state=latest" localhost --> homebrew module will install/update bat package 
+**  ansible -m setup localhost --> this commands shows the setup of local host 
+
+*************************************************************************************************************************************************************************
+
+PlayBooks
+================
+
+Playbooks are a way to congregate ordered processes and manage configuration needed to uild out to a remote system 
+
+1) Playbooks make configurations management easy and gives us the ability to deploy to amulti-machine setup 
+
+2) Playbooks can declare configurations and orchestrate steps (normally done in a manual ordered process), and, when run, can ensure our remote system is 
+   configured as expected
+
+3) The written tasks within a playbook can be run synchronously or asynchronously 
+
+4) Playbooks gives us the ability to create infrastructure as code and management it all in source control 
+
+
+What are Playbooks 
+---------------------
+
+Play - difnes a set of activites (task) to be run on hosts
+Task - An action to be performed on the host
+        - Execute a command 
+        - Run a script 
+        - Install a package 
+		- Shutdown/restart
+
+1) List out everything we need to purchase 
+2) Group each item with similar 
+3) ensure they are logically defined order 
+4) Shop for each item according to the order they are listed
+
+List out everything we need to apply to each instanse 
+Group them according to configuration usage
+Ensure they are in logically defined order 
+Run each task according to the order they are lsited 
+
+a) Playbook use YAML sysntax which allows you to model a configuration or a process 
+b) Playbooks are composed of one or more plays in a lsit 
+c) The goal of a play is to map a group of host (defined in our inventory file) to a task that are used to call Ansible modules
+d) By composing a playbook of multiple plays, it makes it possible to orchestrate multi-machine deployments and allow us to run certain 
+   steps on all machine in a group 
+
+** ansible -m ping all 
+
+The above command in playbook 
+------------------------------
+
+# ping.yml
+---
+ - host: all
+   task:
+   - name: Pinging all servers 
+     action: ping 
+
+Playbook execution 
+------------------------
+
+** ansible-playbook ping.yml 
+** ansible-playbook ping.yml -v --> verbose 
+** ansible-playbook ping.yml -vv --> moe verbose
+** ansible-playbook uname.yml 
+
+---
+
+# This is my first ever yaml file for ansible
+
+- hosts: localhost
+  name: Ensure that the file reaches to the detsination
+  gather_facts: false     ----> this command can speed up the playbook task completion however if the configuration is done in a way where it has to gather facts then don't put it false
+  tasks:
+  - copy: src="../inventory.txt" dest="/tmp/inverntory.txt"
+
+What does it take to construct a system using Playbooks
+---------------------------------------------------------
+
+Package Management -----------> Configure Infrastructure ----------------------> 
+
+
+1) Package Management - What packages will our system need? Install all packages neeed to run our system.
+                        1) Pacthing 2) Package Manager 
+
+Example:
+------------
+
+---
+	- hosts: loadbalancers
+	  tasks:
+		- name: Install apache 
+		  yum: name=httpd state=latest 
+
+
+2) Configure Infrastructure - Configure our system with necessary application files or configuration files that re needed to configure environment
+                              1) Copy Files 2) Edit configuration files 
+							  
+
+Example:
+------------
+
+---
+	- hosts: loadbalancers
+	  tasks:
+		- name: Copy Config Files 
+		  copy: src=./config.cfg dest=/etc/confg.cfg 
+		  
+	- hosts: webservers
+	  tasks:
+		- name: Synchronize folders 
+		  synchronize: src=./app dest=/var/www/html/app
+
+
+3) Service Handelers - Create service handlers to start, stop, or restart our system when chnages are made 
+                       1) command 2) service 3) handelers 
+
+
+Example:
+------------
+
+---
+	- hosts: loadbalancers
+	  tasks:
+		- name: Configure port number 
+		  lineinfile: path=/etc/config.cfg regexp='^port' line='port=80'
+          notify: Restart apache 		  
+		  
+	 handlers: 
+	  - name: Restart apache 
+		  service: name=httpd status=restarted
+
+
+DEMO Constructing our System 
+====================================
+
+1) Package Management 
+   a) apache 
+   b) php 
+
+2) Configure Infrastructure 
+   a) upload index.php
+   b) configure php.ini
+   c) Configure load balancer 
+
+3) service Handlers 
+   a) restart services 
+
+Inventory 
+=====================
+
+** ansible-inventory --graph 
+** ansible-inventory --graph --vars
+** ansible-inventory --list 
+
+
+Template functionality and ginger2 syntax
+===============================================
+ginja sysntax
+----------------------
+
+{% for hosts in groups['webservers'] %}
+  balancerMember http://{{ hostvars[hosts]['ansible_host'] }}
+{% endfor %}
+
+template using in playbook
+----------------------------------
+
+---
+ - hosts: loadbalancers
+   tasks:
+    - name: Creating template
+	  template:
+	    src: ../config/lb-config.j2
+		dest: /ect/httpd/conf.d/lb.confg
+		owner: bin
+		group: wheel
+		mode: 064
+
+    - name: restart apache 
+	  service: name=httpd state=restarted
+
+
+Servie Handlers
+=========================
+service handlers will run when notify parameters is used in one task (see below example)
+so in bleow example apache will restrted only when there is any chnages in ini file 
+
+...
+
+ tasks:
+   - name: Configure php.ini file 
+     linedfile:
+	   path: /ect/php.ini
+	   regex: ^short_open_tag
+	   line: 'short_open_tag=On'
+	 notify: restart apache  
+
+ handlers:
+   -name: restart apche
+   service: name=httpd state=restarted
+
+
+Ansible modules
+==============================
+
+System ---> USer, Group, Hostname, Iptables, Lvg, Lvol, Make, Mount, Ping, Timezone, Systemd, Service
+Commands ---> These are used to execute Command, Expect, Raw, Script, Shell 
+Files  ---> to work with Acl, Archive, Copy, File, Find, Lineinfile, Replace, Stat, Template, Unarchive
+Database ---> help to work on Dbs like Mongodb, Mssql, Mysql, Postgresql, Proxysql, vertica 
+Cloud  ---> AWS, Azure, VMware, Digital Oceaan, Google, Docker etc
+Windows ---> this is used to work in windows environment with the help of Win_copy, Win_command, Win_domain, Win_file, Win_iis_website, Win_msg, Win_msi, Win_package, Win_ping, 
+             Win_path, Win_robocopy, Win_regedit, Win_shell, Win_service, Win_user,  
+
+
+Ansible conditionals
+=======================================
+
+# This is we are installing git 
+
+- name: Ensure the git software is installed
+  host: localhost
+  tags: [ 'install-git']
+  tasks:
+  - package: name=git state=latest
+    when: ansible_os_family == 'RedHat'       # when is used for conditions
+    become: yes                               # becomes is used to run the commands using sudo 
+
+when module is used for conditional and == (double equal to) to check the condition 
+
+Conditionals in Loops 
+-----------------------------
+
+---
+
+- name: Install softwarres
+  hosts: all
+  vars:
+	packages:
+		- name: nginx
+		  required: true 
+        - name: mysql
+		  required: true
+		- name: apache
+		  required: true
+  tasks:
+  - name: Install ""{{ item.name }} on Debian
+    apt:
+	  name: "{{item.name}}"
+	  state: present
+	when: item.required == True
+	loop: "{{ packages }}"
+
+******* # Ansible register is a way to capture the output from task execution and store it in a variable ( see below example)
+
+play3.yml 
+
+---
+
+# This is we are installing git 
+
+- name: Ensure the git software is installed
+  host: localhost
+  tags: [ 'install-git']
+  tasks:
+  - package: name=git state=latest
+    when: ansible_os_family == 'RedHat'       # when is used for conditions
+    become: yes                               # becomes is used to run the commands using sudo 
+
+- name: Ensure ~/.gitcponfig copied from master.config
+  host: node1
+  tasks: 
+  - name: first show no config in targets 
+    command: git config --global --list
+    ignore_errors: yes # we know git config fails so ensure we don't stop playbook execution with ignore_errors 
+	register: git_config_before               # Ansible register directive is a way to capture the output from task execution and store it in a variable
+	
+  - name: show git config output always - verbosity 0 is default for debug module 
+    debug: var=git_config_before
+	
+  - name: tried and true copy module with master.gitconfig from previously in the course
+    copy: src="../inventory.txt" dest="/tmp/inverntory.txt"
+	
+  - name: show newly added configuration
+    command: git config --global --list 
+	ignore_errors: yes
+	register: git_config_after
+	
+  - name: ensure to show git config after with debug - this time only show stdout_lines
+    debug: var=git_config_after.stdout_lines   # This module prints statements during execution and can be useful for debugging variables or expressions 
+	                                             without necessarily halting the playbook. Useful for debugging together with the ‘when:’ directive.
+												 and stdout_lines will print the subset of the output only the stdout plines part from the output from debug 
+
+Conditionals and Registers
+----------------------------
+
+- name: Check the status of a service and email if it's down
+  host: localhost
+  tasks:
+	- command: service httpd status 
+	  register: result
+	  
+	- mail: 
+		to: admin@company.com
+		subject: Service Alert
+		body: Httpd Service is dowm
+		when: result.stdout.find('down') != -1
+	
+
+Loops in Ansible
+===========================
+
+Loop is a loping directive which executes a same task multiple number of times, each time it runs it store the value of each iten in variable item 
+
+- name: Creating users
+  host: localhost
+  tasks:
+  - user: name='{{ item }}' state=present
+	loop:
+	 - joe
+	 - ramji
+	 - sitaji
+	 - hanumanji
+	 - mahadevji
+
+- name: Creating users
+  host: localhost
+  tasks:
+  - user: name='{{ item.name }}' state=present uid='{{ item.uid }}'
+	loop:
+	 - name: joe
+	   uid: 1
+	 - name: ramji
+	   uid: 2
+	 - name: sitaji
+	   uid: 3
+	 - name: hanumanji
+	   uid: 4
+	 - name: mahadevji
+       uid: 5
+
+past days we used loops like the below:
+
+- name: Creating users
+  host: localhost
+  tasks:
+  - user: name='{{ item }}' state=present
+	with_items:
+	 - joe
+	 - ramji
+	 - sitaji
+	 - hanumanji
+	 - mahadevji
+
+we can use with directive with files, urls mongodbs etc ...
+
+Dry run using Ansible 
+=========================
+
+** ansible-playbook playbook.yml --check
+
+if we want to start a playbook with a particular task
+
+** ansible-playbook playbook.yml --start-at-task "Start Httpd service"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

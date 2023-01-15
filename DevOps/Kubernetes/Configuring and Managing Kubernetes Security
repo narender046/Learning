@@ -1,0 +1,1343 @@
+Configuring and Managing Kubernetes Security 
+----------------------------------------------------
+Securing the API Server
+==============================
+
+1) Authentication 
+------------------------
+
+Authentication Plugins 
+--------------------------
+
+1) Clients Certificates - Mostly common, by default when using kubeadm comon Name is the username
+2) Authentication Tokens - HTTP authorization header in the client request, Service Accounts, Boot strap Tokens static File 
+3) Basic HTTP - static passowrd file, Only read during API server startup, Simple to set up and use (Dev)
+
+
+2) Authorization
+----------------------
+
+Authorization Plugins
+----------------------------
+
+1) RBAC (roles based Access Control)
+2) Node
+3) Attribute based Access-Control
+
+
+3) Admission Control 
+
+Users in Kubernetes
+===========================
+
+1) Users are managed by external systems 
+2) No user API Object 
+3) Authentication plugin implemnets authentication 
+4) Authentication is pluggable
+5) userames used for access control and logging 
+6) Users can be aggreagated into groups 
+
+Service Accounts and service account Credentials 
+===================================================
+
+1) Authentication Pods to the API server
+2) Apply permissions for authorization 
+3) Namespaced ServiceAccount per namespace 
+4) All Pods must have a Service Account defined 
+5) Create ServiceAccount Object
+6) Credentails stored as secret as CA certificate or Token or Namespace 
+7) Interact with the API server 
+8) Image pull secret 
+9) Mounted insidw as Pod as files using volume - /var/run/secrets/kubernetes.io/serviceaccount 
+
+
+Creating a ServiceAccount 
+---------------------------------
+(declaratively)
+
+apiversion:v1
+kind: ServiceAccount 
+metadata:
+   name: mysvcaccount1
+   
+(imperativey)
+
+kubectl create serviceaccount mysvcaccount1
+
+
+Configuring a ServiceAccount iin a POd spec
+-----------------------------------------------------
+
+spec:
+  serviceaccount: mysvcaccount1
+  containers:
+   - image: nginx 
+     name: nginx 
+
+
+DEMO Investigating Certificates based Authentication
+-----------------------------------------------------------
+
+# we are using certificates to authenticate to our cluster
+# Our certificates inform is stored in the .kube/config
+# Kubectl reads the credential and send the API request on to the API server 
+
+** kubectl config view 
+** kubectl config view --raw 
+
+# Let's read the certificate information out of our kubeconfig file 
+# Look for subject: CN= is the username which is kubernetes-admin it's also in the group (O=) system:masters
+
+** kubectl config view --raw -o jsonpath='{ .users[*].user.client-certificate-data }' |based 64 --decode > admin.crt
+** openssl *509 -in admin.crt -tect -noout | head 
+
+# we can use -V6 to see the api request, and return code whcih is 200.
+
+** kubectl get pods -v 6 
+
+
+DEMO Working with Service Account 
+-------------------------------------
+
+# getting the service Accounts informatio 
+
+** kubectl get serviceaccount
+
+# A service account can contain image pull secrets and also mountable secrets, notice the mountable secrets name
+
+** kubectl describe serviceaccounts default
+
+# here is the secret associated with the default service account and token which can be used for authentication 
+# if you don't define a service account in your pood spec, this service account is used in pod 
+# There is one default service account per namespace
+# Pods can only access service accounts in the same name spaces 
+
+** kubectl describe secret default-token-8fb46 #<--- change this to your default service account name
+
+# Create a service Accounts 
+
+** kubectl create serviceaccount mysvcaccount1
+
+# This new service account will get it's own secret 
+
+** Kubectl describe serviceaccounts mysvcaccount1
+
+# Create a workload, this uses the defined service account myserviceaccount 
+
+** kubectl apply -f nginx-deployment.yaml
+** kubectl get pods
+
+# you can see the pod spec populated with the service account. If we didn't specify one, it would get the default 
+# Use ServiceAccountName as service Account is depricated 
+
+** PODNAME=$(kuectl get pods -l app=nginx -o jsonpath='{ itents[*].metadata.name }')
+** kubectl get pod $PODNAME -o yaml 
+
+# The secret is mounted in the pod. See volumes and Mounts 
+
+** kubectl describe pod $PODNAME
+
+
+DEMO Accessing the API server Inside a Pod 
+-----------------------------------------------
+
+# let's see how the sceret is available inside the pod 
+
+** PODNAME=$(kuectl get pods -l app=nginx -o jsonpath='{ itents[*].metadata.name }')
+** kubectl exec $PODNAME -it -- /bin/bash
+** ls /var/run/secrets/kubernetes.io/serviceaccount/
+** cat /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+** cat /var/run/secrets/kubernetes.io/serviceaccount/namespace
+** cat /var/run/secrets/kubernetes.io/serviceaccount/token
+
+# load the token and cacert into variables for reuse 
+
+** TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+**CACERT=/var/run/secrets/kubernetes.io/serviceaccount/token
+
+# you are able to authenticate to API server with the user... and retrieve some basic information
+
+** curl --cacert $CACERT -X GET https://kubernetes.default.svc/api/
+** curl --cacert $CACERT --header "Authorization: Bearer $TOKEN" -X https://kubernetes.default.svc/api/
+
+# but it doesn't have any permission to access Objects ... This user is not authorized to access pods 
+
+** curl --cacert $CACERT --header "Authorization: Bearer $TOKEN" -X https://kubernetes.default.svc/api/namespace/default/pods
+** exit 
+
+
+DEMO Testing API access with kubectl can-i with Impersonate 
+------------------------------------------------------------------
+
+# we can also use user Impersonation to help use with our authorization testing
+
+** kubectl auth can-i list pods --as=system:serviceaccount:default:myserviceaccount1
+** kubectl get pods -v 6 --as=system:serviceaccount:default:myserviceaccount1
+
+
+
+DEMO Managing Authorization for a Service Account 
+-------------------------------------------------------
+
+# we let off within where serviceaccount didn't have access to the API Server to access Pods 
+
+** kubectl auth can-i list pods --as=system:serviceaccount:default:myserviceaccount1
+
+# But we can create an RBAC Role and Bind that to our service account 
+# we define who, can perform what verbs on what resources 
+
+** kubectl create role demorole --verb=get, list --resources=pods 
+** kubectl create rolebinding demorolebinding --role=demorole --serviceaccount=default:myserviceaccount1
+
+# then the service account can access the API with the 
+
+** kubectl auth can-i list pods --as=system:serviceaccount:default:myserviceaccount1
+** kubectl get pods -v 6 --as=system:serviceaccount:default:myserviceaccount1
+
+# Let's go back inside the pod again 
+
+** kubectl get pods 
+** PODNAME=$(kuectl get pods -l app=nginx -o jsonpath='{ itents[*].metadata.name }')
+** kubectl exec $PODNAME -it -- /bin/bash
+
+# load the token and cacert into variable for reuse 
+
+** TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+**CACERT=/var/run/secrets/kubernetes.io/serviceaccount/token
+
+# Now I can view Objects .. this isn't just for curl but for any application
+# Apps commony use Libararies to progmmaticly interact the api server for cluster state information 
+
+** curl --cacert $CACERT --header "Authorization: Bearer $TOKEN" -X https://kubernetes.default.svc/api/namespace/default/pods
+** exit 
+
+*****************************************************************************************************************************************************************************
+
+Certificates in Kubernetes and PKI in Kubernetes
+-------------------------------------------------------
+
+1) TLS Encryption
+2) User and System Component authentication 
+3) Kubeadm-based cluster 
+    a) Creates a self-signed Certificates 
+	b) Genrates a self signed certificates Authority 
+	c) kubernetes-admin user 
+4) can use an external/trusted CA 
+5) Single self-signed certificate Authority - /etc/kubernetes/pki 
+       a) ca.key - this is the private key 
+	   b) ca.crt - CA certificate 
+
+ca.crt 
+--------------
+
+1) Distribute to clients to trust your self-signed CA
+2) Copied to Nodes in the cluster during build 
+3) kubeconfig files 
+4) service account 
+
+
+kubeconfig Files and certificates Based Authentication
+------------------------------------------------------------
+
+1) Cluster location 
+2) Client authentication 
+3) User or system components 
+4) CA Certificate ca.crt 
+5) Client certificate 
+6) Client Private key 
+
+
+DEMO Investigating PKI setup on a control plane node 
+-------------------------------------------------------------
+
+# The core PKI deirectory, contains the certs adn keys for all core functions in the cluster 
+# the self signed CA, server certificate and key for encryption by API server
+# etcd's  cert setup, sa (service account) and more
+
+** ls -l /etc/kubernetes/pki
+
+# read the ca.crt to view the certificates information, useful to determine the validity date of the certificate
+# you can use this command to read the information about any of the *.crt in tis folder 
+# Be sure to check out the validity and the subject CN 
+
+** openssl x509 -in /etc/kubernetes/pki/ca.cert -text -noout | more
+
+DEMO Investigating a control plane pod kubeconfiguration
+-------------------------------------------------------------
+
+# Kubeconfig file location, for system components, controller manager, kubelet and scheduler.
+
+** ls /etc/kubernetes
+
+# certificate-authority-data is a bsed64 encoded ca.cert
+# you can also see the server for the API server is https 
+# And there is also a client-certificate-data which is the client certificate used.
+# And client-key-date is the private key for the client cert. these are used to authenticate the client to the api server.
+
+** sudo  more /etc/kubernetes/scheduler.conf 
+** sudo kubectl config -view --kubeconfig=/etc/kubernetes/scheduler.conf 
+
+# the kube-proxy has it's kube-config as a config rather than a file on the file system.
+
+** kubectl get config -n kube-system kube-proxy -o yaml 
+
+Creating Certificates with the certificate API 
+----------------------------------------------------
+
+1) submit and sign certificate signing requests (CSR) via the API server 
+2) Encryption and authentication in the cluster 
+3) Programmatic interface 
+
+Process of creating anew Certificate 
+----------------------------------------
+
+1) Create a private key with openssl or cfssl
+
+** openssl genrsa -out demouser.key 2048
+
+2) Create a certificate signing Request with openssl or cfssl 
+# CN (common Name) is your username, O (organization) is the group
+
+** openssl req -new -key demouser.key -out demouser.csr -subj "/CN=demouser"
+
+3) create and submit certificatesigning request Object 
+# this request needs to be based64 encoded
+# And also have the header and trailer pulled out.
+
+** cat demouser.csr | based64 | tr -d "\n" > demouser.base64.csr 
+
+4) Approve the certificateSigning request 
+
+** cat <<EOF | kubectl apply -f  -
+apiversion: certificates.k8s.io/v1beta1
+kind: CertificateSigningRequest
+metadata: 
+	name: demouser
+spec:
+	groups:
+	- system: authenticated 
+	request: $(CAT demouser.base64.csr)
+	usages:
+	- client auth 
+EOF 
+
+5) Retrieve the certificate 
+
+** kubectl certificate approve demouser 
+** kubectl get certificatesigningrequests demouser \
+   -o jsonpath=' { .status.certificate }' |based64 --decode > demouser.crt 
+   
+
+kubeconfig file Overview and Componenets 
+-----------------------------------------------
+
+1) Cluster access 
+2) Context is a cluster's location and credentials --> access parameters to the cluster, comprised of a cluster and user in this kubeconfig file
+3) Multiple configuration contexts ---> N/w location of API server, Certificate authority's certificate (ca.crt)
+4) users   ---> Credentials, username, Certificate/token/password 
+5) System componenets 
+
+
+kubeconfig File - admin.conf 
+-------------------------------
+
+apiVersion: v1
+clusters:
+- cluster: 
+	certificate-authority-data: DATA+OMITTED
+	server: https://172.16.94.10:6443
+  name: kubernetes
+
+users:
+- name: kubernetes-admin
+  user: 
+	client-certificate-data: REDACTED
+	client-key-date: REDACTED 
+
+contexts:
+- content:
+     cluster: kubernetes
+	 user: kubernetes-admin
+	name: kubernetes-admin@kubernetes
+
+
+Creating a kubectl File Manually 
+------------------------------------
+
+1) defininga cluster
+
+** kubectl config set-cluster kubernetes-demo \
+        --server=https://172.16.94.10:6443 \
+		--sertificate-authority=/etc/kubernetes/pki/ca.crt
+		--embed-certs=true \
+		--kubeconfig=demouser.conf 
+		
+2) define a credential
+
+** kubectl config set-credentials demouser \
+       --client-key= demouser.key \
+	   --client-certificate-data=demouser.crt \
+	   --embed-certs=true \
+	   --kubeconfig=demouser.conf
+
+3) Define the context 
+
+** kubectl config set-context demouser@kubernetes-demo \
+       --cluster=kubernetes-demo
+	   --user=demouser \
+	   --kubeconfig=demouser.conf
+
+4) Set the context 
+
+** kubectl config use-content demouser@kubernetes-demo --kubeconfig=demouser.conf 
+
+
+DEMO Using a kubeconfig file for a new user 
+--------------------------------------------------
+
+# Create a workload... this is being executed as our noraml admin user (kubernetes-admin)
+# Notice in the output it's loading our ~/.kube/config 
+
+** kubectl create deployment nginx --image=nginx  -v 6
+
+# test connection using our demouser kubeconfig file. This user is view only 
+# Notice which kubeconfig filewas loaded demouser.conf and it will use the default content in the kubeconfig file
+
+** kubectl get pods --kubeconfig-demouser.conf -v 6
+
+# Since this user is bound to the view ClusterRole, It cann't chnage or delete Objects 
+
+** kubectl scale deployment nginx --replicas=2 --kubeconfig-demouser.conf
+
+# if addition using --kubeconfig you can set it your current KUBECONFIG environment Variable
+# this is useful for switching between kubeconfig files 
+
+** export KUBECONFIG=demouser.conf 
+** kubectl get pods -v 6 
+** unset KUBECONFIG 
+ 
+
+
+DEMO Creatinga new Linux user and configuring cluster access 
+----------------------------------------------------------------
+** sudo useradd -m demouser 
+
+# copy the demouser.conf kubeconfig to the home directory of demo user in the default kubeconfig location of .kube/config
+
+** sudo mkdir -p /home/demouser/.kube
+** sudo sp -i demouser.conf /home/demouser/.kube/config
+** sudo chown -R demouser:demouser /home/demouser/.kube
+
+# switch over to this user 
+
+** sudo su demouser
+** cd 
+
+# Checkout the kubeconf file, we don't need --kubeconfig since it's in the default location  ~/.kube/config
+
+** kubectl config view 
+
+# test access of our new user, check where the config loaded from Are thses pods in the output?
+
+** kubectl get pods -v 6 
+
+*************************************************************************************************************************************************************************
+
+
+Role Based Access Control 
+===================================
+
+1) Authorization Plugin enabled on the API server 
+2) Allowing a requestor to perform actions on resources 
+3) Based on REST API semantics  - verb and Noun
+4) Default deny, rules are wrtitten to permit actions on the resource 
+5) Subjects - users, groups or Service Accounts
+
+API Objects for Implementing RBAC Rules 
+------------------------------------------
+
+1) ROle 2) ClusterRole 3) RoleBinding 4) ClusterRoleBinding 
+
+Roles
+-==========
+
+1) Roles are what can be done to Resources 
+2) Roles are made up of one or many Rules 
+3) Verbs on resources 
+   get Pods, Create Deployment etc 
+4) Default deny, add permissions to Resources 
+5) There is no deny permissions 
+6) Roles are namespaced 
+
+
+Cluster Roles
+===============
+
+1) Similar to a Role, enable access to resources 
+2) cluster scoped resources
+   nodes, persistenetVolumes 
+3) Give access across more than one namespace or all namespaces 
+4) Defining Roles in each namespace can oincrease administrative overhead and can be error prone 
+
+RoleBinding
+=============
+
+1) Role/ClusterRole only say what can be done 
+2) Defines the subject and refers to a Role/Cluster Role 
+3) Who can do what defined in a Role/ClusterRole 
+4) Role and RoleBinding are used in namespaced scoped security 
+5) ClusterRole and RoleBinding are used provide access to more than one namespace or the whole cluster 
+
+Cluster RoleBinding
+=====================
+
+1) ClusterRoleBinding grants access cluster-wide 
+2) Combing a ClusterRole with a ClusterRoleBinding
+3) willScope security independent of namespace 
+    Non-namespaced 
+	Cluster-scoped resources 
+
+What to use when ?
+-------------------------
+
+1) Use Role and RoleBinding to scope security to a single namespace 
+2) Use clusterRole and RoleBinding to scope security to several or all namespaces 
+3) Use ClusterRole and ClusterRoleBinding to scope security to all namespaces OR Cluster -scoped resources 
+
+Default ClusterRoles
+-------------------------
+
+1) Clsuter-admin -----> clusteride super access, Rolebinding - fulladmin whithin a Namespace, Edit Roles RoleBindings Resource Quotas 
+2) admin ---> Full access within a Namespace, Rolebinding - fulladmin whithin a Namespace, Edit Roles RoleBindings
+3) Edit ---> Read/write within a namespace, Not view/edit Roles RoleBindings Resource Quotas, Acces to secretes in the Namespaces 
+4) view ---> Read only within a namespace, Not view/edit Roles RoleBindings Resource Quotas, NO acces to secretes in the Namespaces
+
+
+Defining Roles and ClusterRoles 
+-------------------------------------
+
+1) Rules ---> apiGroups = An empty string designates the core API group
+2) Resources ---> Pods, Service, Deployments, Nodes and More 
+3) Verbs ---> get, list, create, update, patch, watch. delete, deletecollection
+4) Roles/ClusterRoles can have several Rules defined 
+ 
+
+Defining RoleBinding and ClusterRoleBinding
+----------------------------------------------
+
+1) roleRef 
+     RoleBinding --> Role/ClusterRole
+     ClusterRoleBinding --> ClusterRole
+2) Subjects 
+     kind (User/Group/ServiceAccount)
+	 Name 
+	 Namespace 
+
+
+Defining Role and RoleBinding
+-=====================================
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+	name: demorole
+	namespace: ns1
+rules:
+- apiGroups:[""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+	name: demorole
+	namespace: ns1
+roleRef:
+   apiVersion: rbac.authorization.k8s.io
+   kind: Role
+   name: demorole
+Subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: User 
+
+
+** kubectl create role demorole --verb=get, list --resource=pods --namespace ns1 
+** kubectl create reolebinding demorolebinding --role=demorole --user=demouser
+
+
+DEMO testing API access with Kubectl can-i and Impersonation 
+===================================================================
+
+# testing access to resources using can-i and using impersonation... this is a great way to test your rbac configuration 
+
+** kubectl auth can-i list pods   # yes, runs as kubernetes-admin
+** kubectl auth can-i list pods --as=demouser  # no, runs as demouser  
+** kubectl auth can-i list pods --as=demouser  --namespace ns1  # yes, runs as demouser which has rights within the ns1 namespace 
+** kubectl auth can-i list deployments --as=demouser --namespace ns1 # no, runs as demouser, but user can't get/list deployments ..
+
+# get all the pods in our deployment AS our Demouser 
+
+** kubectl get pods -l app=nginx --namespace ns1 --as=demouser 
+
+# Let's try to delete a pod using our user demouser that only get/list pods in the ns1 namespace 
+# the user demouser doesn't have the permissions to delete a pod, this will fail 
+
+** PODNAME=$(kubectl get pods -l app=nginx --as=demouser --namespace ns1 -o jsonpath='{ .items[*].metadata.name } ')
+** echo $PODNAME
+** Kubectl delete pod $PODNAME --namespace ns1 --as =demouser 
+
+# since the user has onlt get and list pods, if we try to access another resources with this service account it will fail 
+
+** kubectl get deployments --nsnamespace ns1 --as =demouser 
+
+
+DEMO 1 Creating a ClusterRole and ClusterRoleBinding
+============================================================
+
+# Create a ClusterRole to Access cluster wide/non-namespaced resources 
+# Goal is to give demo user access to a cluster -wide resource, nodes 
+
+** kubectl auth can-i nodes --as=demouser  #no
+** kubectl get nodes --as=demouser
+
+# To give this user access to the node information, we can usea clusterrole and clusterrolebinding 
+
+** kubectl create clusterrole democlusterrole --verb=get,list --resource=nodes
+
+# Create a clusterrolebinding, allowing the user to read Node information 
+
+** kubectl create clusterrolebinding democlusterrolebinding --clusterrole=democlusterrole --user=demouser
+** kubectl auth can-i list nodes --as=demouser  # yes 
+** kubectl get nodes --as=demouser 
+
+
+DEMO 2 Creating a ClusterRole and ClusterRoleBinding
+============================================================
+
+# o give user access to more than one namsepace 
+# Let's now create a new namespace and a deployment and try to access that deployment with our user ... it will fail 
+
+** kubectl create namsepace ns2 
+** kubectl create a deployment nginx2 --image -nginx --namespace ns2 
+** kubectl get deployment --as=demouser --namespace ns2 
+
+# Rather than maintain the role in demorole in each namespace, let;s delete the Rolebinding and Role from the first demo
+# and use a ClusterRole and ClusterRoleBinding for access resources in ns1 nd ns2 namespaces for our demouser 
+
+** kubectl delete rolebinding demorolebinding --namespace ns1 
+** kubectl delete role demorole --namespace ns1 
+
+# create a clusterrole to be used on both namespaces enabling this user to get/list pods in both namespaces 
+
+** kubectl create clusterrole democlusterrolepods --verb=get,list --resource=pods
+
+# Create a RoleBinding in eac namespace referring the clusterrolr we just created 
+# the name can be same as they are in 2 different namespaces 
+# This gives our demouser access to get/list pods in each namespace 
+
+** kubectl create rolebinding demorolebinding --clusterrole=democlusterrolepods --user=demouser --namespace ns1 
+** kubectl create rolebinding demorolebinding --clusterrole=democlusterrolepods --user=demouser --namespace ns2
+
+# Can we read from both the namespaces with our demouser ?
+
+** kubectl auth can-i list pods --as=demouser --namespace ns1
+** kubectl auth can-i list pods --as=demouser --namespace ns2
+
+** kubectl get nodes --as=demouser --namespace ns1
+** kubectl get nodes --as=demouser --namespace ns2
+
+
+DEMO Giving a user full access to deployments 
+--------------------------------------------------
+
+# Let's give demouser access to the deployments in ns1 namespace
+#  This * will give user the full control over the resource, in this case deployments using a Role/Binding 
+
+** kubectl create role demoroledeployments --verb=* --resource=deployments --namespace ns1 
+
+# Now let's create a rolebinding for this user to the newly created role 
+
+** kubectl create rolebinding demorolebindingdeployment --role=demoroledeployment --user=demouser --namespace ns1  
+
+# testing out our rights as demouser, rather than impersonation let's switch obver to the user we created in 
+# the module 'Managing Certificates and kubeconfig Files'
+
+** sudo su demouser
+** kubectl get deployment --namespace ns1 
+
+# Let's get a listing of pods in the namespace 
+# We still have rights to the pods too becuse of the clusterRole/RoleBinding from above demos 
+# where we defined a ClusterRole and added it to RoleBindings in bith namespaces 
+# This is an example of additive rights this user is in more than one Role/ClusterRole and gets rights to all defined resources
+
+** kubectl get pods --namespace ns1
+
+# demouser nou has full control over the deployment so wecan update the image 
+
+** kubectl describe deployment nginx --namespace ns1 
+** kubectl set image deployment nginx nginx=nginx:1.19.1 --namespaces ns 1 
+** kubectl describe deployment nginx --namespace ns1
+
+# This user cann't list the deployments in ns2 , but has rights to the pods in ns2 due to the clusterRole/RoleBinding demo 2
+
+** kubectl get deployment --namespace ns2
+** kubectl get pods --namespace ns2
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

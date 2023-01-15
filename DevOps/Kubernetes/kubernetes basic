@@ -1,0 +1,585 @@
+KUBERNETES
+==============================
+
+why/what Kubernetes
+------------------------------------------
+
+1) Popular container orchestrator (start an stop containers based applications based on requirements of dev team ) 
+2) Workload placements - (what containers will live on whihc server)
+3) Infrastructure abstraction - kubernetes does the work for developer and they don't have to wory which service is running where in production.
+4) Desired state - kubernetes maintaines the defined desired state of the application
+5) Released by Google in 2015, maintained by a lagre community 
+3) runs on top of Docker(usually) as a set of APIs in containers 
+4) Provides API/CLI to manage containers acreoos servers
+5) Many clouds provide it for you
+
+server * chnage rates = decide the orchestration need 
+
+orchestration is design to automate chnage and monitor the state of the application and ensures it remains in the desired state.
+Few orchestration tools from vendors based on Kubernetes -
+VMware - Enterprise PKS 
+RedHat - Opneshift
+Ubuntu - Canonical
+
+Key benfits of using using kubernetes
+-------------------------------------------------
+
+1) Speeds up the deployment of the container based application 
+2) Ability to absorb the chnage quickly - get new versions of apps with new features
+3) Ability to recover quickly - a crashed container or server its kubernetes job to fix it quickly
+4) Hide complexity in the cluster specially infra and integartion relation.
+
+
+Kubernetes Principles:
+==============================
+
+1) Desired state/Declarative configuration - 
+2) Controllers/Control lops 
+
+3) Kubernetes API/ The API server :  API objects 
+-----------------------------------------------------------------------------------------------
+
+API Objects - Collection of primitives to represent your system's state. Enable configuration of state by Declaratively and Imperatively.
+Declaratively - describe the deployment and how we wanna out system to look
+Imperatively -  execute the sequence of commands to achieve the declared state.
+  
+K8 API server is restful API over http using Json
+K8 API are the sole way to interact with cluster for us and K8 both 
+K8 API Objects (building blocks) :
+
+1) pods - Single or collection of containers deployed as a single unit. its the applications or services. 
+          Unit of scheduling and ephemeral in nature (no pod is ever redeployed) Atomicity (pod is there or not)
+		  if 1 contianer dies in pod (either 1 or more containers in a pod), the pod will become unavailable and thet pod will no longer provide services)
+
+K8 job is to keep the desired state:
+   a) State - is the pod up and running 
+   b) Health - is the application in the pod runing by checking probes( these are the health check rules)
+
+2) controllers - This keep our system in desired state. so things like Replica sets and deployment becomes core tools in our tool box when we build K8
+                 Create and manage Pods for us, Respond to Pod health and state. Ensuring the deired number of pods are running and healthy in the cluster.
+
+Types of controllers:
+	a) ReplicaSet - it defines the number of particular pod replicas required running at all times.	
+	b) Deployment - it manages rollout of ReplicaSets.  A deployment allows you to describe an application's life cycle, 
+                   such as which images to use for the app, the number of pods there should be, and the way in which they should be updated   
+
+3) Services - persistence access point of the applications that we deploy in pods. Network abstraction for pod access, IP and DNS name for the service.
+			  Dynamically updated based on pod lifecycle. Scale by adding/removing Pods. Load balancing 
+
+4) storage - facilitates the persistance storage for apps deployed in pods. Volumes -  tightly coupled with storage media directly accessible to pods in deployment.
+             Persistent volume - Pod independent storage defined by the admin at the cluster level.
+			 Persistent volume claim - when pod wants to access the Persistent volume from the underlying cluster.
+
+
+Kubernetes Cluster Architecture terminology
+------------------------------------------------
+
+1) Control Plane Node = Master Node - it implements the majaor control functions of a cluster. it cooridnates cluster operations, monitoring, pod scheduling and it is the primary
+                       access point for cluster administration.
+		
+Several components of Control Plane Node
+-------------------------------------------------
+a) API Server - It is the primary access point for cluster and administrative operations. it is communications hub of K8 cluster. it is stateless in nature.
+b) etcd - It is the cluster store, we need to store the state of the system. it is responsible for persisting of state of K8 cluster object as key value pair.
+c) Scheduler - it tells K8 to which node should start the Pods depending upon the resources and other attributes ( administrative policies) of pods.
+d) Controllers Manager - Implementing the lifecye of the controllers exceuting monitoring state of K8 Objects such as pods. basically it the responsible for keeping
+                         application in K8 cluster in desire state.
+
+kubectl - this is responsible for interaction (for us) with K8 API server by retreive information and also chnage in operations to help us to maintain desired state.
+          It is our primary administrative commandline tool for opearting our K8 cluster 
+
+2) Node/Worker Node - It is responsible for starting up pos and containers supporting the pods. Nodes implements networkinga nd ensuring the n/w  reachability to the pods
+                      and services running nodes on worker nodes. can be physical or virtual. 
+
+Several components of Node/Worker Nodes
+------------------------------------------
+
+a)Kubelet - It is responsible for starting up the Pods on the nodes.
+b)Kube-proxy - It is responsible for networking and implementing services abstraction on the nmode itself. (iptales, routing traffic to pods and implementing service abstraction)
+c)Container Runtime (containerd) - This is the actual runtim environment for the containers. it pulls the image for registry and provide the 
+                      excution environment for container and pod abstraction 
+
+** These 3 above services run on each node including Master node in K8 cluster.
+** Kubelet and Kube-proxy both communicate with API server, monitoring it for the changes for the environments.
+
+
+cluster Add-on Pods - These pods provide special services to K8 cluster. Primary example = DNS. This DNS pod provides DNS services inside the cluster 
+Ingress controllers - These are advanced http and layer7 load balancers in content routers.
+dashboard - This is web bas administration of K8 cluster
+
+Kubernetes Networking Rules:
+---------------------------------------------------
+Layer 2 or Layer 3 connectivity
+
+1) Pods on Node can communicate with all pods on all nods without NAT in K8 cluster 
+2) Agenst on Node can communicate with all Pods on that node.
+
+Cluster network Ports 
+------------------------------------------
+Component                  Port                     Used By
+--------------------------------------------------------------
+API server 					6443                     All
+etcd                       2379-2380                 API/etcd
+Scheduler                   10251                    Self
+Controller Manager          10252                    Self
+Kubelet                     10250                    Control Plane Node (Runs on master Node)
+Kubelet                     10250                    Control Plane Node (Runs on worker Node)
+NodePort                  30000-32767                All (A NodePort is an open port on every node of your cluster Kubernetes transparently routes incoming traffic 
+                                                          on the NodePort to your service,even if your application is running on a different node)
+
+Packages we need to install in order to setup/run the K8 cluster
+----------------------------------------------------------------------
+
+1)Containered or Docker 
+2)kubelet
+3)kubeadm
+4)kubectl
+
+1) Containered (becasue docker will be removed after 1.22 version of K8)
+
+https://kubernetes.io/docs/setup/production-environment/container-runtimes/#containerd 
+
+2) then rest of the kubelet, kubeadm and kubectl
+
+https://computingforgeeks.com/deploy-kubernetes-cluster-on-ubuntu-with-kubeadm/ 
+
+
+Bootstraping a cluster with kubeadm
+-------------------------------------------
+
+1) kubeadm init
+2) pre-flight checks
+3) creates a certifcate Authority
+4) generates kubecoding files
+5) generates static pod Manifests
+6) Wait for the control Plane Pods to start
+7) taints the control Plane Node
+8) generates a Bootstrap token 
+9) Starts add-on components DNS and kube-proxy
+
+Certificate Authority
+------------------------
+1)it is self signed Certificate Authority(CA)
+2)can be part of external PKI
+3)Securing cluster communications
+4)It can have HTTPs over API server communications
+5)it can authenticate users and cluster components. it lives here - /etc/kubernetes/pki
+ and distributed to each node when joined by kubeadm init 
+ 
+kubeadm created kubeconfig files
+-----------------------------------
+1)it is used to determine how to connect to the cluster API server
+2)it keeps client certifcates
+3)it gives cluster API server N/w location IP address/DNS name
+4) kubeadm creates various confi files at - /etc/kuberenete swhihc will be used by cluster objects ex below:
+   a) admin.conf - Super user configuration for K8 cluster 
+   b) kubelet.conf - help to locate API server and which client certificate it used for authentication to connect to API server
+   c) controller-manager.conf - help to locate API server and which client certificate it used for authentication to connect to API server
+   d) scheduler.conf - help to locate API server and which client certificate it used for authentication to connect to API server
+
+static pod Manifests
+--------------------------
+Describe the configuration of Pods and it lives at - /etc/kubernetes/manifests
+the maifets will be created for 
+etcd
+API server
+controller Manager
+Scheduler
+its the job of the kubelet to watch this directory and start posds according to the manifests file
+
+After Creating a control Panle node aka Master Node (comes on screen)
+-------------------------------------------------------------
+
+our Kubernetes control-plane has initialized successfully!
+
+To start using your cluster, you need to run the following as a regular user:
+
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+Alternatively, if you are the root user, you can run:
+
+  export KUBECONFIG=/etc/kubernetes/admin.conf
+
+You should now deploy a pod network to the cluster.
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
+Then you can join any number of worker nodes by running the following on each as root:
+
+kubeadm join 192.168.152.135:6443 --token kx8vdg.hokhhtymeuw0k9ap \
+	--discovery-token-ca-cert-hash sha256:fe02b7e0c67745ec5a8a12b64b03acd55bc87939de79aba326f02bf5871038d0 
+	
+root@ubuntu:/etc/containerd# 
+
+wget https://docs.projectcalico.org/manifests.calico.yaml
+
+
+
+
+
+mkdir -p $HOME/.kube
+cp -i /etc/kubernetes/admin.conf  $HOME/.kube/config
+chown $(id-u):$(id-g) $HOME/.kube/config
+
+kubectl apply -f calico.yaml
+
+Adding a node to cluster aka Worker node
+------------------------------------------------
+
+1) install required packages 
+2) kubeadm join
+3) Node downloads the cluster information
+4) Node submits a CSR 
+5) CA signs CSR automatically 
+6) configures kubelet.conf
+
+
+
+
+****************************************************************************************************************************************************************
+
+Kubernetes commands 
+--------------------------
+
+1) creating a pod network
+apply Flag manages applications through files defining Kubernetes resources.
+It creates and updates resources in a cluster through running kubectl apply. 
+This is the recommended way of managing Kubernetes applications on production
+
+Kubernetes manifests can be defined in YAML or JSON. The file extension .yaml, .yml, and .json can be used.
+
+** kubectl apply -f <name.yaml>
+
+2) the below command will list all the system pods as well as <name.yaml> pods and thier status.
+-- watch parameters gives output over time(live) 
+
+** kubectl get pods --all-namespaces
+** kubectl get pods --all-namespaces --watch 
+
+3)the below comand will give you the list of current nodes, (The Control plane node/Master node shoud be ready)
+
+** kubectl get nodes
+
+4) This will give you the token whihc was generated when kubeadm init was done and it lives there for 24 hour
+
+** kubeadm token lsit 
+
+5)  after 24 hour we can create a new tiken using the below command
+
+** kubeadm token create 
+
+6) The below command will help to generate the join command for the worked nodes to get connected to the cluster
+
+** kubeadm token create --print-join-command
+
+
+kubectl
+-----------------------
+1) Primary CLI tool 
+2) Control your Kubernetes cluster 
+3) Operations - create, read, update and delete resources(primary way to talk to API server)
+4) Resources -  API Objects
+5) output - if there's output we can format to get the desired details (Jason, yaml etc)
+
+Operations using kubectl (few important ones)
+------------------------------
+
+1) apply/create - primary operations for designing deployments or creting resources request to the API server
+
+2) run - allows to start a single pod (when not managed by controller and specifying the image at the command line)
+
+3) explain - documentation of resources (APi object)
+
+4) delete - delete a specifies resources
+
+5) get - list a specified respurce
+
+6) describe - gives a detailed resource information for a particular resource
+
+7) exec - it allows us to exeute a command on a container 
+
+8) logs - view logs on a container 
+
+resources 
+------------
+
+1) pods (alias - po)
+2) nodes (alias - no)
+3) services (alias - svc)
+.....and many more
+
+output 
+-------------------
+
+1) wide - output additional info
+
+2) yaml - YAML formatted API onject as output
+
+3) json - json formatted API onject as output
+
+4) dry-run - print an object without sending to the API server 
+
+
+few examples 
+---------------
+
+** kubectl get pods pod1 --output=yaml
+
+** kubectl create deployment nginx --image=nginx
+
+1) Listing and inspecting cluster ..helpful for knowing which cluster is your current context
+** kubectl cluster-info 
+
+2) To review status, roles and versions
+** kubectl get nodes
+
+3) Aditional info aboyt each node in the cluster
+** kubectl get nodes -o wide
+
+4) Lists the pod list
+** kubectl get pods
+
+5) To list the system pods. A namespace is a way to group resources together.
+** kubectl get pods --namespace kube-system
+
+6) To list the system pods with additional info for them.
+** kubectl get pods --namespace kube-system -o wide
+
+7) To list the system pods, service, deamonset, replicassets and deployment with additional info for them.
+** kubectl get all --all-namespace | more
+
+8) To list all the API resources 
+** kubectl api-resources | more
+
+9) using alias example 
+** kubectl get no
+
+10) Filtering using grep
+** kubectl api-resources | grep pod 
+
+11) Explaining an individual resource in detail
+** kubectl explain pod | more -- >( we can put any object (pod, services, nodes etc) here pod is example) - It shows the description and fields to construct a pod
+** kubectl explain pod.spec | more ------> From above aommand we get the list of fields, if we want to get more details for exmaple spec field, run this command           
+** kubectl explain pod.spec.containers | more ---> this little more deeper for the pod object 
+** kubectl explain pod --recursive | more ---> it will list down all the fields recursively for an object
+
+12) To list all the details related to our nodes (name, taints, conditions, addresses, system info, non-terminated pods, and events)
+** kubectl describe nodes <node-name> | more
+
+13) To get help for kubectl commands 
+** kubectl -h | more
+** kubectl get -h | more
+** kubectl create -h | more
+
+**********************************************************************************************************************************************************************
+
+Application deployment in Kubernetes
+-------------------------------------------------
+
+1) Imperative configuration - generally executing commands at command line one by one and operating on one object at a time. (see below example)
+** kubectl create deployment nginx --image=nginx
+** kubectl run nginx --image=nginx
+
+when our system and application grows then working with one container or one object is tricky and not very practicle approach so we use 
+
+2) Declarative configuration - This is the core the core principle behind Kubernetes. This helps us to defined our desired state in code. 
+                               Manifests files - The manifest is a specification of a Kubernetes API object in JSON or YAML format. A manifest specifies the desired state 
+							   of an object that Kubernetes will maintain when you apply the manifest.
+                               ** kubectl apply -f deployment.yaml - this will contain the description which I want to deploy.
+				
+Basic manifest - Deployment 
+===============================
+
+apiversion: apps/V1
+kind: deployment                                --> it describs the object type -- all API resources are the objects here 
+metadata:                                       --> small detail for our this work
+  name: hello-world
+spec:                                           --> specification or implementation deails of the object 
+  replicas : 1              		            --> it tells how many pods we want to up and running for this deployment 
+    selector:                 		            --> this tells which pods are member of this deployment
+	  matchlabels: 
+	    apps : hello-world
+template:                 		                --> this defines the pod created by this deployment (sometimes called pod template)
+  meatadata:
+    labels:           		                    --> these values are similar as selector and assigned to pods for identification as a member of this deployment
+      app: hello-world 
+  spec:                                         --> In this spec we will define the containers started by the pods in this deployment 
+    containers:  
+    - image: <image-name/containername>	        --> here we are defining the image of the above containers 
+	  name: hello-app                --> here we can define the container name (example hello-app) 
+
+				
+1) save the above information in depoyment.yaml and then kubectl apply -f and file name
+2) then the file will be read and a request will be sent to API server 
+3) Them API server will make this happen for us, and it will start our 1 hello-world pod.
+ 
+Generating the Manifests with dry-run (deployments) (this generated the manifests quickly and correctly)
+==========================================================================================================
+
+**kubectl create deployment hello-world --image=<image-name/containername> --dry-run=client -o yaml > deployment.yaml
+
+The above command will gereneate the yaml for the PAI object whihc we want to create but it won't send the request to API server to create the API object, 
+And dry-run will print the details in deployment.yaml 
+
+
+Demo Imperative deployment
+-------------------------------
+1) kubectl creates deployment with one replica in it. pulling a simple hello-world app from google container registry
+** kubectl create deployment hello-world --image=gcr.io/google-samples/hello-app:1.0
+
+2) The below command is deploying a single bare pod that is not managed by a controller
+** kubectl run deployment hello-world --image=gcr.io/google-samples/hello-app:1.0
+
+checking status of the pods:
+
+** kubectl get pods
+** kubectl get pods -o wide
+
+### when containerd is your container runtime, use the below command to get a listing of the containers running
+
+** sudo crictl --runtime-endpoint unix:///run/containerd/containerd.sock ps
+
+
+some troubleshooting things 
+-------------------------------------
+1) To check the logs from the container, which will write to stdout.
+** kubectl logs hello-word-pod 
+
+2) starting a process inside a container inside a pod.
+** kubectl exec -it hello-word-pod -- /bin/sh
+
+3) few other commands once we are connected to the shell insde container
+** hostname
+** ip addr show
+** exit --> to exit the shell from container
+
+
+When we ran the first command kubectl create deployment, it created deployment for us. Lets check more closly at that deployment using commands
+Deployments are made up of Replica Sets and ReplicaSets create pods!
+
+** kubectl get deployment hello-word
+
+** kubectl get replicaset
+
+** kubectl get pods
+
+
+To look at deployments and its Pods a little more deeper, Name, replicas and Events. 
+
+** kubectl describe deployment hello-word | more
+
+Replicaset creates the Pods... check out, name, controlled by replicas pod template and Events.
+How the replicSet create the pods
+
+** kubectl descrie replicaset hello-world | more
+
+Checkout the the name, node, Status, controlled by, Ips, containers, and events.
+How the Pod is scheduled, the container image is pulled and then container is created and then started.
+
+** kubectl described pod <pod_name> | more
+
+
+DEMO: Exposing and accessing services in the cluster
+---------------------------------------------------------------
+1) exposing the deployment as service. this will create a service for deployment.
+Exposing our service on port 80, conneting to an application running on 8080 in our Pod. 
+port - internal cluster port
+target-port - The pod service port, your application. this one we defined whne we started the pods.
+
+** kubectl expose deployment hello-world --potrt=80 --target-port=8080
+
+2) to checkout cluster-IP and ports, that's where we will access this service.
+** kubectl get service hello-wrold
+
+3) we can also get the information from using describe
+** kubectl describe service hello-world
+
+Endpoints - These are Ip and port pairs for each of the pods that are member of this service 
+
+4) Accessing the service inside the cluster 
+** curl http://$SERVICEIP:$PORT
+
+5) Accessing a single pods' application directly, useful for troubleshooting.
+** kubectl get endpoints hello-world
+
+6) using kubectl to generate yaml or json for the deployments 
+** kubectl get deployment hello-world -o yaml | more
+** kubectl get deployment hello-world -o json | more
+
+7) How to delete the resources we created imperatively 
+** kubectl get all
+** kubectl delete service hello-world
+** kubectl delete deployment hello-world
+** kubectl delete pod hello-world-pod
+** kubectl get all
+
+
+Demo Declarative deployment and Accessing and Modifying Existing Resources in our cluster
+-----------------------------------------------------------------------------------------------------
+
+1) For deploying resources declaratively in the cluster, we can use apply to create our resources from yaml.
+we could write yaml by hand ... but we can get it by command dry-run=client to build it for us, this can be used as template for move complex deployments.
+** kubectl create deployment hello-world --image=<image-name/containername> --dry-run=client -o yaml | more
+
+2) lets run the command again and write the output to a file
+** kubectl create deployment hello-world --image=<image-name/containername> --dry-run=client -o yaml > deployment.yaml
+
+3) To check the contents of the deployment file
+** more deployment.yaml
+
+4) Create the deployment ... declaratively in code.
+** kubectl apply -f deployment.yaml
+
+5) Generate the yaml for the service 
+** kubectl expose deployment hello-world --potrt=80 --target-port=8080 --dry-run=clinet -o yaml | more
+
+6) write the service yaml manifest to file
+** kubectl expose deployment hello-world --potrt=80 --target-port=8080 --dry-run=clinet -o yaml > service.yaml
+
+7) To check the contents of the service.yaml file
+** more service.yaml
+
+8) Create the service ... declaratively in code.
+** kubectl apply -f service.yaml
+
+9) to checkout the current state, deployment, ReplicaSet, Pod and a service 
+** kubectl get all
+
+10) sacle up our deployment ...in code
+** vi deployment.yaml
+Changing spec.replicas from 1 to 20
+	replicas: 20
+
+11) updating our configuration with apply to make the code to the desired state 
+** kubectl apply -f deployment.yaml
+
+12) Checking the new configurations of our deployment
+** kubectl get deployment hello-world
+** kubectl get pods |more
+
+13) read the curl access to see the load balancing of the http request (kube-proxy is distributing the workload to the 20 pods)
+** kubectl get service hello-wrold
+url http://$SERVICEIP:$PORT
+
+
+14) we can edit the resources " on the fly" with kubectl edit. Buts this isn't reflected in our yaml.
+but this chnage will persist in etcd.. cluster store. change 20 to 30.
+** kubectl edit deployment hello-world 
+
+once we run the above command the out will be opened in local editor and once chnages are done and saved. It will be sent to API server to take immediate effect.
+
+
+15) Checking the new counts for pods (30) of our deployment
+** kubectl get deployment hello-world
+** kubectl get pods |more
+
+16) we can scale a deployment using scale and checking the staus 
+** kubectl scale deployment hello-world --replicas=40
+** kubectl get deployment hello-world
+
+17) How to delete the resources we created declaratively
+** kubectl delete service hello-world
+** kubectl delete deployment hello-world
+** kubectl get all

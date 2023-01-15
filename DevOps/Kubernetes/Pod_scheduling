@@ -1,0 +1,550 @@
+Pod Scheduling
+=====================================
+
+Understanding Scheduling 
+----------------------------
+1) selecting a Node to start a Pod on 
+2) kube-scheduler 
+3) kube-scheduler considers two things 1) resources and 2) Policy 
+
+Scheduling Process
+-------------------------
+
+1) It watches the API server for unscheduled Pods 
+2) Node selection 
+3) Update nodename in the Pod Object 
+4) Node's Kubelets watches API server for work
+5) Signal container runtime to start comtainer(s)
+
+resource requests
+-----------------------
+
+1) setting requests will cause the scheduler to find a Node to fit the workload/pod 
+2) requests are guarantees based on CPU, memory 
+3) nodes tracks Allocated resources per node
+4) Pods needing to be scheduled while there are not enough resources available will go pending 
+
+  spec:                                         
+    containers:  
+    - image: <image-name/containername>	         
+	  name: hello-app 
+      resources:
+		requests:
+			cpu: "1"
+	  ports:
+	   - containerPort:8080
+
+
+DEMO: Scheduling in Action (finiding scheduling information)
+-----------------------------------------------------------------
+
+# let's craete a deployment with 3 replics 
+
+** kubectl apply -f deploymen.yaml 
+
+# Pods spread out evenly scross nodes due to our scoring functions for selector spread during Scoring.
+
+** kubectl get pods -o wide
+
+# We can look at the Pods events to see the scheduler making its choices 
+
+** kubectl describe pods
+
+# If we scale our deployment to 6 .. we can see the scheduler works to keep load even across the nodes
+
+** kubectl scale deployment <deployment_name> --replicas=6
+** kubectl get pods -o wide
+
+# we can see the nodename populated tab for this node
+
+** kubectl get pods <pod-name> -o yaml
+
+DEMO: Scheduling Pods with resource requests 
+------------------------------------------------
+
+** kubectl apply -f requests.yaml
+
+# we created three pods, one of each node
+
+** kubectl get pods -o wide 
+
+# let's scale our deployment to 6 replicas 
+
+** kubectl scale deployment <deployment_name> --replicas=6
+
+# We see that three pods are pending ...why ?
+
+** kubectl get pods -o wide 
+** kubectl get pods -o wide  | grep pending 
+
+# Let's look at why the pods are pending .. checking out the Pods' events ...
+
+**  kubectl describe pods
+
+# Now let's look at the node's allocation ... we have allocated 62% of our CPU...
+
+** kubectl describe node <node_name>
+
+Controlling Scheduling 
+------------------------------
+
+1) Node Selector - a) It assigns Pods to nodes using Labels and Selectors
+                   b) Apply labels and Selectors
+                   c) Scheduler will assign Pods to a Node with a matching Label
+                   d) Simple key/value check based on matchLabels 
+                   e) Ofter used to map Pods to Nodes based on special harware requirements and workload isolations.				   
+2) Affinity
+3) Taint and Tolerations
+4) Node Cordining 
+5) Manual Scheduling 
+
+
+*************************************************************************************************************************************************************************
+
+1) Node Cordorning (NodeName based)
+=======================================
+
+1) Mark a Node as unschedulable
+2) Prevents new Pods brom being scheduled to that Node
+3) Does not affect any existing Pods on the Node 
+4) This is useful as a preparatory step before a Node reboot or maintenance
+** kubectl cordon <node_name>
+5) If you want to gracefully evict your pods from a Node 
+** kubectl drain <node_name> --ignore-daemonsets 
+
+Manually schedulinga a Pod
+-------------------------------
+
+1) Scheduler populates Nodename for Pod Object via API server
+2) if you specify nodeName in your Pod defnition the Pod will be started on that node 
+3) Node's name muste exist before pod gets created 
+4) Pod Still Subject to Node resource constratints 
+
+Configuring Multiple Scheduler 
+-----------------------------------
+
+1) Implement your own scheduler 
+2) Run Multiple scheduler concurrently 
+3) Define in your Pod Spec which Pod in the cluster 
+
+
+DEMO: Nod Cordining
+---------------------------
+# let's craete a deployment with 3 replics 
+
+** kubectl apply -f deploymen.yaml
+
+# Pods spread out evenly scross nodes 
+
+** kubectl get pods -o wide
+
+# let's cordon a node
+
+** kubectl cordon <node_name>
+
+# That won't eveict any pods .. but if I scale the deployment and check the distrubituin of pods now across the nodes 
+
+** kubectl scale deployment <deployment_name> --replicas=6
+** kubectl get pods -o wide
+
+# let's drain the Pods from <node_name>
+
+** kubectl drain <node_name>
+
+# let's try that again since daemonsets aren't scheduled we nee to wrok around them and now workload shifted to the other nodes 
+
+** kubectl drain <node_name> --ignore-daemonsets
+** kubectl get pods -o wide
+
+# we can uncordon node , but nothing will be created there untill there's an event like scalling or another deployment comes in 
+# something that will casue pods to get created 
+
+** kubectl uncordon <node_name>
+
+# let's scale the deploymenta dn see where the new pods gonna be scheduled (all the new pods got scheduled to the cordoned node which is uncordoned now)
+
+** kubectl scale deployment <deployment_name> --replicas=9
+** kubectl get pods -o wide
+
+DEMO: Manually schedulinga a Pod specifying Nodename
+------------------------------------------------------------
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+	name: hello-world-ds
+spec:
+  nodeName : <node_name>
+  containers:
+      - image: nginx:1.20.2
+        name: nginx
+
+** kubectl apply -f pod.yaml
+
+# Our pods should be deployed on sthe specifed node
+
+** kubectl get pods -o wide 
+
+# let's delete the pod, since there are no controller it won't get created 
+
+** kubectl delete pod <pod_name> 
+
+# let's cordon the same node and try to deploy the pod again 
+
+** kubectl cordon <node_name>
+** kubectl apply -f pod.yaml
+** kubectl get pods -o wide 
+
+Note - we can still place a pod on the ndoe since the Pod isn't getting scheduled, status is SchedulingDisabled
+
+# Can't removed the unmanaged pod either since it's not managed by a controller and won't get restarted 
+
+** Kubectl drain <node-name> --ignore-daemonsets
+  - error : Cann't be deleted Pods not managed by ReplicationController, replicSet, Job DaemonSet, Stateful (use --force to overwrite)
+
+
+**********************************************************************************************************************************************************************
+
+2) DaemonSet Pod Scheduling
+===================================
+
+1) One Pod will be scheduled to each worker Node in a cluster by the default-scheduler
+2) As Nodes are added to the cluster, they will get a Pod
+3) we can control which Nodes get pods 
+  a) Node selector 
+  b) Labeling the Nodes
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+	name: hello-world-ds
+spec:
+  Selector : 
+	matchlabels :
+		app: hello-world-app
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: hello-world-app
+    spec:
+      containers:
+      - image: nginx:1.20.2
+        name: nginx
+		
+		
+Nodeselector - using it we can run the pod in a subset of nodes in cluster or a particlur node by labeling the node names in cluster
+---------------
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+	name: hello-world-ds
+spec:
+  Selector : 
+	matchlabels :
+		app: hello-world-app
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: hello-world-app
+    spec:
+      nodeSelector:
+		node: hello-world-app
+			name: nginx		
+        containers:
+      - image: nginx:1.20.2
+        name: nginx
+		
+		
+Node Label and Selector based
+=====================================
+
+# To check the nodes labels 
+
+** kubectl get nodes --show-labels
+
+# Label our nodes with something descriptive 
+
+** kubectl label node <node_name> disk=local_ssd
+** kubectl label node <node_name> hardware=local_gpu
+
+# query our labels to confirm 
+
+** kubectl get node -L disk,hardware
+
+# create three pods, two using selectors, one without 
+
+** kubectl apply -f <pods_nameyamlfile>.yaml
+
+# View the scheduling of pods in the custer
+
+** kubectl get nod _L disk,hardware 
+** kubectl get pods -o wide
+
+# Cleanup when we are finished, delete our labels and pods 
+
+**kubectl label node <node_name> disk -
+**kubectl label node <node_name> hardware -
+** kubectl delete pod <pod_name>
+
+*********************************************************************************************************************************************************************
+
+
+4) Taint and Toleration
+--------------------------------
+
+1) Taint - Ability to control whihc pods are scheduled to Nodes
+2) Tolerations - allows a Pod to ignore a taint and be scheduled as normal on Tainted Nodes
+3) useful in scenarios where the cluster administrator needs to influence scheduling without depending on the user  
+
+when building taint
+
+key=value:effect 
+
+** kubectl tainit nodes <node_name> key=MyTaint: NoSchedule
+
+spec:
+  containers:
+    - image: nginx:1.20.2
+      name: nginx
+	  ports: 
+	   - containerPort: 8080
+  tolerations:
+   - key: "key"
+     operator: "Equal"
+	 value: "MyTaint"
+     effect: "NoSchedule"
+	 
+	 
+DEMO: COntrolling Pod Placement with Taint and Toleration
+--------------------------------------------------------------
+
+# Let's add a taint to a node 
+
+** kubectl taint nodes <node_name> key=MyTaint:NoSchedule
+
+# We see the taint at the ndoe level, look at the taint section
+
+** kubectl describe node <node_name>
+
+# let's craete a deployment with 3 replics 
+
+** kubectl apply -f deploymen.yaml 
+
+# We can see Pods get Placed on non tained Nodes 
+
+** kubectl get pods -o wide 
+
+# But we add  adeployment with Toleration and we see Pods gets placed on the non tainted nodes 
+
+
+** kubectl apply -f deployment-tolerations.yaml
+** kubectl get pods -o wide
+
+# Let's Remove a taint from a node 
+
+** kubectl taint nodes <node_name> key=MyTaint:NoSchedule-
+
+
+**********************************************************************************************************************************************************************
+
+
+5) Affinity and Anti-affinity Scheduling
+----------------------------------------------
+
+1) nodeAffinity - used labels on Nodes to make a scheduling decision matchExpression
+  a) requiredDuringSchedulingIgnoredDuringExecution
+  b) preferredDuringSchedulingIgnoredDuringExecution
+2) podAffinity - schedule pod onto the sameNode, Zone as some other Pod
+3) podAntiAffinity - schedule pods into the different Node, Zone as some other pod 
+
+
+spec:
+  containers:
+    - image: nginx:1.20.2
+      name: nginx
+	  ports: 
+	   - containerPort: 8080
+  affinity:
+   podAffinity:
+	 requiredDuringSchedulingIgnoredDuringExecution:
+	 - labelSelector:
+	      matchExpressions:
+		   - key: app
+		     operator: In
+
+			 
+DEMO: COntrolling Pod Placement with Affinity
+------------------------------------------------
+
+# Let's start off with a deployment of web and cache pods
+# Affinity: we want to have always have a cache pod co-located on a Node where a web pod
+
+** kubectl apply -f deployment-affinity.yaml
+
+# let's look at the labels on the nodes, look for kuernetes.io/hostname which we are using for our topologykey
+
+** kubectl describe node <node_name> | head
+** kubectl get nodes --show-labels 
+
+# We can see that web and Cace are both on the same node
+
+** kubectl get pods -o wide
+
+# if we scale the web deployment we still get spread nodes in replicaset, so we don't need to enforce that with Affinity
+
+** kubectl scale deployment <deployment_name> --replicas=2
+** kubectl get pods -o wide
+
+# if we scale the cache deployment it will get scheduled to the same node as the other web server
+** kubectl scale deployment <deployment_name> --replicas=2
+** kubectl get pods -o wide
+
+DEMO: COntrolling Pod Placement with AntiAffinity
+-----------------------------------------------------
+
+# Now, Lets test out Anti-Affiniyt, deploy web and cache again
+# But this time we are going to make sure that no more Thank 1 web pod is on each node with anitiAffinity 
+
+** kubectl apply -f deployment-antiaffinity.yaml
+** kubectl get pods -o wide
+
+# if we scale the web & cache deployment
+
+** kubectl scale deployment <deployment_name> --replicas=4
+
+# One pod will go Pending because we can have only 1 web Pod pre node
+# when using requiredDuringSchedulingIgnoredDuringExecution in our affinity rule
+
+** Kubectl get pods -o wide --selector app=hello-world-web
+
+# to fix this we can chnage the scheduling rule to preferredDuringSchedulingIgnoredDuringExecution
+# Also going to set the number of replicas to 4
+
+** kubectl apply -f deployment-antiaffinity-corrected.yaml
+** kubectl scale deployment <deployment_name> --replicas=4
+
+# now we have 4 pods up and running, but doesn't the scheduler already ensure replicaset spread ? yes! 
+
+** Kubectl get pods -o wide --selector app=hello-world-web
+
+**********************************************************************************************************************************************************************
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

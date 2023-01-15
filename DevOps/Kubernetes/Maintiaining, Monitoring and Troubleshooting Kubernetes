@@ -1,0 +1,1682 @@
+Maintaining, Monitoring and Troubleshooting Kubernetes 
+==============================================================
+
+Maintaining kubernetes Cluster 
+-------------------------------------
+
+etcd
+============
+
+1) Key value store 
+2) stores cluster state data and objects 
+
+Due to the above important things we need to ensure the below things :
+
+1) Backup and restore (to protect data and in case of disaster we can make the app up again at the earliest)
+2) High availability (to achieve our HA SLAs and customer exprience)
+
+Backup and restore 
+---------------------------
+
+1) Backup with snapshot using etcdctl 
+2) Secured and/or encrypted to protect sensitive information stored 
+3) copied offsite as soon as possible
+4) schedule the backups as a cronJob 
+5) default data directory  a) /var/lib/etcd b) this directory is backed by hostPath volume mounted into a Pod (data is pysically on master node)
+
+Getting etcdctl 
+-----------------------
+
+1) Download from github
+2) Exec into a etcd Pod 
+3) Start a etcd container that we pull and run  
+ 
+Backing up etcd with etcdctl 
+--------------------------------
+
+ETCDL_API=3 etcdl --endpoints=https://127.0.0.1:2379 \
+   --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+   --cert=/etc/kubernetes/pki/etcd/server.crt \
+   --key=/etc/kubernetes/pki/server.key \
+   snapshot save /var/lib/dat-backup.db
+
+ETCDL_API=3 etcdl --write-out=table snapshot status /var/lib/dat-backup.db
+
+
+Restoring etcd with etcdctl 
+---------------------------------------
+
+ETCDL_API=3 etcdl snapshot restore /var/lib/dat-backup.db
+mv /var/lib/etcd /var/lib/etcd.OLD
+docker stop $CONTAINER_ID
+mv ./default.etcd /var/lib/etcd
+
+
+DEMO Investigating etcd Configuration 
+------------------------------------------
+
+# check out some of the key configuration information 
+# container image and tag, --data dir, and mounts and volumes for both etcd -certs and etcd-data
+
+** kubectl describe pod etcd-c1-master1 -n kube-system 
+
+# Then some configuration for etcd comes from the static pod manifest, check out the listen-clinet-urls , data-dir, volumeMount etc.
+
+** sudo more /etc/kubernetes/manifests/etcd.yaml
+
+# You can get the runtime values from ps -aux 
+
+** ps -aux | grep etcd 
+
+# Let's get the etcdl on our local system here ..by downloading it from github 
+# we can find out the version of etcd we are running by using etcs --version inside the etcd pod 
+
+** kubetcl exec -it etcd-C1-master1 -n kube-system -- .bin/sh -c 'ETCDL_API=3 /usr/local/bin/etcd --version'| head 
+** export RELEASE="3.4.3"
+** wget https://github.com/etc-io/etcd/releases/download/v${RELEASE}/etcd-v${RELEASE}-linux-amd64.tar.z
+** tar -zxvf etcd-v${RELEASE}-linux-amd64.tar.z
+** cd etcd-v${RELEASE}-linux-amd64
+** sudo cp etcdctl /usr/local/bin/
+
+# quick check to see if we have etcdctl 
+
+**  ETCDL_API=3 etcdl --help| head 
+
+
+DEMO Backing up etcd with etcdctl
+--------------------------------------
+
+# First , Let's create a sceret that we are going to delete and then get back when we run the restore 
+
+Kubectl create secret genric test-secret --from-literal=username='svcaccount' --from-literal=password='S0methingS0Str0ng'
+
+# Defien a varibale for the endpoint to the etcd-C1-master1
+
+** ENDPOINT=https://127.0.0.1:2379
+
+# Verify we are connecting to the right cluster.. define your endpoints and keys 
+
+** sudo ETCDCTL_API=3 etcdl --endpoints=$ENDPOINT \
+        --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+        --cert=/etc/kubernetes/pki/etcd/server.crt \
+        --key=/etc/kubernetes/pki/server.key \
+        member list
+
+# take the backup saving it to /varlibdat-backup.db...
+# Be sure to copy that to remote storage when doing this for real 
+
+** sudo ETCDCTL_API=3 etcdl --endpoints=$ENDPOINT \
+        --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+        --cert=/etc/kubernetes/pki/etcd/server.crt \
+        --key=/etc/kubernetes/pki/server.key \
+        snapshot save /var/lib/dat-backup.db
+ 
+# Read the metadata from the backup/snapshot to print out to the snapshot's status 
+
+** ETCDL_API=3 etcdl --write-out=table snapshot status /var/lib/dat-backup.db
+
+# now let's delete the object and then run a rstore to get it back 
+
+** kubectl delete secret test-secret
+
+
+DEMO Restoring etcd to a Same Data directory 
+----------------------------------------------------
+
+# Run the restore to a second folder ...this will restore to the current directory 
+
+** ETCDL_API=3 etcdl snapshot restore /var/lib/dat-backup.db
+
+# Confirm our data is in the restore directory
+
+** sudo ls -l 
+
+# Move the old etcd data to a safe location 
+
+** mv /var/lib/etcd /var/lib/etcd.OLD
+
+# Restart the static pod for etcd ...
+# if you kubectl delete it will not restart the static pod as it's managed by kubelet and not a controller 
+
+** sudo docker ps | grep k8s_etcd_etcd
+** CONTAINER_ID=$(sudo docker ps | grep k8s_etcd_etcd | awk '{ print $1 }')
+
+# stop the container from our etcd pod and move our restored data into place 
+
+** sudo docker stop $CONTAINER_ID
+** sudo  mv ./default.etcd  /var/lib/etcd
+
+# Wait for the etcd to get restarted 
+
+** sudo docker ps | grep etcd
+
+# is our secret back ?
+
+** kubectl get secret test-secret
+
+
+DEMO Restoring etcd to a New Data directory 
+----------------------------------------------------
+
+# let's delete the object again then run a rstore to get it back 
+
+** kubectl delete secret test-secret
+
+# using the same backup from earlier 
+# Run the restore to a define data-dir, rather than the current working directory
+
+** ETCDL_API=3 etcdl snapshot restore /var/lib/dat-backup.db --data-dir=/var/lib/etcd-restore
+
+#Update the static pod manifest to point to that /var/lib/etcd-restore .. in three places 
+# Update 
+# - --data-dir=/var/lib/etcd-restore
+# ...
+#  volumeMounts:
+#      - mountPath: /var/lib/etcd-restore
+#...
+# volumes:
+#   -hostPath:
+#        name: etcd-data
+#		path: /var/lib/etcd-restore
+
+** sudo cp /etc/kubernetes/manifests/etcd.yaml
+** sudo vi /etc/kubernetes/manifests/etcd.yaml
+
+# This will cause the control plane pods to restart .. let's check it at the container runtime level 
+
+** sudo docker ps 
+
+# is our secret back ?
+
+** kubectl get secret test-secret
+
+
+Cluster Upgrade Process Overview (kubeadm-based Clusters)
+===============================================================
+
+1) Upgrade the master/contol Plane nodes
+2) Upgrade any other Control Plane nodes 
+3) Upgrade Worker Nodes 
+
+a) static pod based control Plane node 
+b) you can only upgrade minor versions
+c) Read the release Notes 
+
+
+Cluster Upgrade Process Control Plane Node 
+==================================================
+
+1) update the kubeadm package 
+2) Darin the Master 
+3) kubeadm upgrade Control plane node
+4) kubeadm upgrade apply 
+5) Uncordon the master 
+6) Update kubelet and lubectl 
+7) kubeadm upgrade node 
+
+** sudo apt-mark unhold kubeadm
+** sudo apt-get update
+** sudo apt-cache policy kubeadm 
+** sudo apt-get install kubeadm=$TARGET_VERSION
+** sudo apt-mark hold kubeadm 
+** kubectl darin <master-node> --ignore-daemonsets
+** sudo kubeadm upgrade plane
+** sudo kubeadm upgrade apply v$TARGET_VERSION
+** kubectl uncordon <master-node>
+** sudo apt-mark unhold kubelet kubectl
+** sudo apt-get update
+** sudo apt-get install -y kubelet=$TARGET_VERSION kubectl=$TARGET_VERSION
+** sudo apt-mark hold kubelet kubectl
+
+
+Cluster Upgrade Process Worker Node 
+=========================================
+
+1) update the kubeadm package 
+2) Darin the Node
+2) Darin the Node
+3) kubeadm upgrade Worker node
+4) Update kubelet and kubectl
+5) Uncordon the Worker node
+
+** kubectl darin <worker-node> --ignore-daemonsets
+** sudo apt-mark unhold kubeadm
+** sudo apt-get update
+** sudo apt-get install kubeadm=$TARGET_VERSION
+** sudo apt-mark hold kubeadm 
+** sudo kubeadm upgrade node 
+** sudo apt-mark unhold kubelet kubectl
+** sudo apt-get update
+** sudo apt-get install -y kubelet=$TARGET_VERSION kubectl=$TARGET_VERSION
+** sudo apt-mark hold kubelet kubectl
+** kubectl uncordon <worker-node>
+
+NOTE - Repeat this for all the nodes 
+
+
+Woker Node Maintenance
+================================
+
+1) OS updates and hardware upgrades 
+2) Drain/cordon the Node 
+3) marks the Node Unschedulable 
+4) Gracefully terminates the Pods 
+5) Reboot the Node  - Pod eviction Timeout 
+6) Keep resources in mind ... memory and CPU 
+
+*******************************************************************************************************************************************************************************
+
+
+Logging and Monitoring in Kubernetes Clusters 
+======================================================================
+
+1) Kubernetes Logging Architecture and logging in pods and Containers 
+-------------------------------------------------------------------------
+a) Logging in Kubernetes 
+----------------------------
+1) COntainers and Pod 
+========================
+
+1) stdout and stderr
+2) Logging Driver - ?var/log/container
+3) Two logs are retained on the Node 
+4) Log aggregation
+5) kubectl logs 
+6) log rotation 
+
+** kubectl logs $POD_NAME
+** kubectl logs $POD_NAME -c $CONTAINER_NAME
+** docker logs $CONTAINER_NAME
+** tail /var/log/containers/$CONTAINER_NAME_$$CONTAINER_ID
+
+DEMO Kuebernetes logging in Pods
+---------------------------------------
+
+# Check the logs in a single container Pod 
+
+** kubectl create deployment nginx --image=nginx
+** PODNAME=$(kubetcl get pods -l app=nginx -o jsonpath='{ .items[0].metadata.name }')
+** echo $PODNAME
+** kubectl logs $PODNAME
+
+# Clean up that deployment
+
+** kubectl delete deployment nginx 
+
+# Let's create a multi container pod that writes some information to stdout 
+
+** kubectly apky -f multicontainer.yaml
+
+# Pods a specfix container in a Pod and collection of Pods
+
+** PODNAME=$(kubetcl get pods -l app=nginx -o jsonpath='{ .items[0].metadata.name }')
+** echo $PODNAME
+
+# let's get the logs from the multicontainer pod .. this will throw an error and ask you to define whihc onatiner 
+
+** Kubectl logs $PODNAME
+
+# But we need to specify whihc container inside the pods 
+
+** kubectl logs $PODNAME -c CONTAINER1
+** kubectl logs $PODNAME -c CONTAINER1
+
+# we can access all container logs whcih will dump each conatiners in sequence 
+
+** kubectl logs $PODNAME --all-containers --follow
+** ctrl + c
+
+# For all pods matching the selectro, get all the containe logs and write it to stdout and then file
+
+** kubectl get pods --selectors app=loggingdemo
+** kubectl logs --selectors app=loggingdemo --all-containers
+** kubectl logs --selectors app=loggingdemo --all-containers > allpods.txt
+
+# Also helpful is tailing the bottom of the log....
+# here we are getting the logs (last 5 entries) across all pods matcing the selector 
+
+** kubectl logs --selectors app=loggingdemo --all-containers --tail5
+
+************************************************************************************************************************************************************************
+
+2) Nodes
+================
+
+1) Kubelet      - systemd service. journald, journalctl kubectl.service , /var/log/kubelet.log
+2) kubeproxy  - Pod, kubectl logs, /var/log/containers,/var/log/kube-proxy 
+3) Local operating system logs 
+
+
+DEMO Kuebernetes logging in Nodes
+---------------------------------------
+
+#  get key information and status about the kubelet, ensure that it's active/running and check out the log 
+# also key information about it's configuration is available 
+
+** systemctl status kubelet.service 
+
+# if we want to examine it's log further, we use journalctl to access it's log from journald
+# -u for whihc systemd unit. If  using a pager, use f and b to for forward and back, journalctl has capabilities, but grep is likely easier 
+
+** journalctl -u kubelet.service 
+** journalctl -u kubelet.service | grep -i ERROR 
+
+# timebounding your searches can be helpful in finding issues add --no-pager line wrapping 
+
+** journalctl -u kubelet.service --since today --no-pager 
+
+*********************************************************************************************************************************************************************
+
+3) COntrol Plane Node
+=========================
+
+1) Run as Pod 
+    a) kubectl logs -n kube-system $PODNAME
+	b) docker logs 
+    c) /var/log/containers
+2) Systemd based system logs to journald
+    a) Everywhere else...
+	b) /var/lib/kube-api-server.log 
+
+DEMO Kuebernetes logging in Control Plane Node
+-------------------------------------------------------
+
+# get a lsiting of control plane pods using a selector 
+
+** kubectl get pods --namespace kube-system --selectors tier=control-plane
+
+# We can retrieve logs from control plane pods by using kubetcl logs 
+# This info is coming from the API server over kubectl,
+# It instructs the kubelet will read the log from the node and send it back to you over std out 
+
+** kubectl logs --namespace kube-system kube-api-server-<master_node>
+
+# what is your control plane node is down ? go to docker or to the file system.
+# kubectl logs will send the request to the local node's kubelet to read the logs from disk
+# since we are on the master/control plane node already we can use docker for that
+
+** sudoc doker ps 
+
+# Grab the los for the apai server pos , paste in the CONTAINER_ID
+
+** sudo docker ps | grep k8s_kube-apiserver
+** CONTAINER_ID=$(sudo docker ps | grep k8s_kube-apiserver | awk '{ print $1 }')
+** echo $CONTAINER_ID
+** sudo  docker logs $CONTAINER_ID
+
+# but what if docker is not available 
+# there are also available on file system, here you will fins the current and previous logs files for the containers
+# This is same across all nodes and pods in clsuter. this also applies to user Pods/Container 
+
+** sudo ls /var/log/containers
+** sudo tail /var/log/containers/kube-apiserver-<master_node>*
+
+
+**************************************************************************************************************************************************************************
+4) Understanding and Accessing Cluster evenets 
+=====================================================
+
+1) logs for resources defined in the cluster 
+2) changes in resource state 
+3) Go to log for when something goes wrong   
+      a) kubectl get events 
+      b) kubectl describe $TYPE $NAME
+4) One hour retention 
+
+
+DEMO Working with Kubernetes Events
+=========================================
+
+# show events for all objects in the cluster in the default namespace 
+# look at the deployment creation and scalling operations from above 
+# if you don't have any events since they are only around for an hour create a deployment to generate some 
+
+** kubectl get events 
+
+# It can be easier if the data is actually sorted...
+# Sort by isn't for just events, it can be used in most output 
+
+** kubectl get evenets --sort-by ='.metadata.creationTimestamp'
+
+# create a flawed deployment (see image name is wrong)
+
+** kubectl create deployment nginx --image=ngins
+
+# we can filter the list using of events using field selector 
+
+** kubectl get events --field-selector type=warning 
+** kubectl get events --field-selector type=warning,reason=Failed
+
+# We can also monitor the events as they happen with watch 
+
+** kubectl get evenets --watch &
+** kubectl scale deployment loggingdemo --replicas=5
+
+# breakout of watch 
+
+** fg
+** ctrl + c
+
+# we can look in another namespace too if needed, deployment, created the replicset, which created the pod etc
+
+** kubetcl get events --namespace kube-system 
+
+# these events are also available in the Object as part of kubectl descrie, in the events section
+
+** kubectl describe deployment nginx 
+** kubectl describe replicaset <replicset_name>
+** kubectl describe pods nginx
+
+# Cleanup all the resources used for this demo 
+
+**************************************************************************************************************************************************************************
+
+Accessing Object Data with JSONPath
+=========================================
+
+1)  Kubernetes supports JSONPath
+2) Write expressions to access, filter, sort and format object data 
+3) it allows to do precise operations on Objects 
+
+# List just all pod names 
+
+** kubectl get pods -o jsonpath='{ .items[*].metadata.name }'
+
+# getting all the container images in use by all pods in all namespaces
+
+** kubectl get pods --all-namespaces -o jsonpath='{ .items[*].speccontainers[*].image }' 
+
+
+Filtering Objects with JSONPath
+-------------------------------------
+
+# get all the Internal IP Addresses of Nodes in a cluster 
+
+** kubectl get nodes -o jsonpath="{ .items[*].status.addresses[?(@.type=="InternalIP')].address }"
+
+
+DEMO Accessing Oject data with JSONPath
+-------------------------------------------
+
+# accessing information with JSONPath
+# create a workload and scale it 
+
+** kubectl create deployment <deployment_name> --image=<image_name>
+** kubectl scale deployment <deployment_name> --replicas=3
+** kubectl get pods -l app=hello-world
+
+# we are working with json output of our Objects, in this code 
+# let's start by accessing that lsit of Pods, inside items.
+# Look at the times, find the metadata and name sections in the json output 
+
+** kubectl get pods -l app=hello-world -o json > pods.json 
+
+# its a list of Objects, so lets's display the pod names, first (zeroth) pod ({ "\n"} will give output in a new line after each Object )
+
+** kubectl get pods -l app=hello-world -o jsonpath='{ items[*].metadata.name }'
+** kubectl get pods -l app=hello-world -o jsonpath='{ items[*].metadata.name }{ "\n"}'
+** kubectl get pods -l app=hello-world -o jsonpath='{ items[0].metadata.name }{ "\n"}'
+
+# get all container images in use by all pods in all namespaces 
+
+** kubectl get pods --all-namespaces -o jsonpath='{ items[*].spec.containers[*].image }{"\n"}'
+
+
+DEMO Filtering and Sorting Object data with JSONPath
+------------------------------------------------------------------
+
+# filtering a specific value in the list 
+# Let's say there's a list inside items and you need to access an element in that list 
+# ?() - define a filter in the list 
+# @ - the current object 
+
+** kubectl gt nodes <master-node> -o json | more 
+** kubectl get nodes -o jsonpath="{ .items[*].status.addresses[?(@.type=="InternalIP')].address }"
+
+# sorting 
+# Use --sort-by parameter and define which filed you want to sort on. It can be any field in the object 
+
+** kubectl get pods -o jsonpath='{ .items[*].metadata.name }'
+
+# we can use a custom column to output field data, in this case the creation timestamp 
+
+** kubectl get pods -A -o jsonpath='{ .items[*].metadata.name }{"\n"}' \
+     --sort-by=.metadata.creationTimestamp \
+	 --output=custom-columns='NAME:metadata.name,CREATIONTIMESTAMP:metadata.creationTimestamp'
+
+************************************************************************************************************************************************************************
+
+Monitoring in Kubernetes
+===============================
+
+1) Observe
+2) Measure chnages 
+3) Resource Limits 
+
+EX - peometheus and grafana
+
+1) provide resources metrics Pods and Nodes - Point in time
+2) Collects resource metrics from kubelets 
+3) CPU and memory  - kubectl top pods
+                     kubectl top nodes 
+
+
+DEMO Deploying the Kubernetics metrics Server 
+---------------------------------------------------
+
+# get the metrics server depoyment from github, the release version may chnage
+#  https://github.com/kubernetes-sigs/metrics-server
+
+** wget  https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.3.6/components.yaml
+
+# Add these two lines to metrics server's container args, around Line 90
+# - --kubelet-insecure-tls
+# - --kubelet-preferred-address-types=InternalIp, ExternalIP, Hostname
+
+# Deploy the mainfest for the metrics Server
+
+** kubectl apply -f componenets.yaml
+
+# Is the Metrics Server running ?
+
+** kubetcl get pods --namespace kube-system 
+
+# Let's test it to see if it's collecting data, we can get core information about the memory and CPU 
+# this can take a second ...
+
+** kubectl top nodes
+
+# if you have any issues check out the Logs for the metric server...
+
+** kubectl logs --namespace kube-system -l k8s-app=metrics-server
+
+
+DEMO Using kubectl to Analyze resource consumption on Pods and Nodes
+----------------------------------------------------------------------------
+
+# lets check the perf data for pods, but there's no pods in the default namespace 
+
+** kubectl top pods 
+
+# we can look at our system pods, CPU and memory 
+
+** kubectl top pods --all-namespaces 
+
+# Let's deploy a pod that will burn a lot of CPU, but single threaded we have two CPUs in our nodes.
+
+** kubectl apply -f cpuburner.yaml 
+
+# And create and scale a deployment 
+
+** kubectl create deployment nginx --image=nginx
+** kubectl scale deployment nginx --replicas=3
+
+# are our pods up and running 
+
+** kubectl get pods -o wide 
+
+# how about CPU now, one of the Nodes should have about 50% CPU, one should be 1000m+ recall 1000m = 1vCPU 
+# we can see the resources allocations across the nodes in terms of CPU and memory 
+
+** kubectl top nodes 
+
+# let's get all the perf across all the pods .. it can take a second after the deployments are created to get data 
+
+** kubectl top pods 
+
+# we can use labels and selectros to query subsets of pods 
+
+** kubectl top pods -l app=cpuburner 
+
+# And we have primitive sorting, top CPU and top memory consumers across all pods 
+
+** kubectl top pods --sort-by=cpu
+** kubectl top pods --sort-by=memory 
+
+# Now the cpuburner, let's look at the little more closely at it we can ask for perf for the containers inside a pod 
+
+** Kubectl top pods --containers
+
+# clean up time 
+
+
+****************************************************************************************************************************************************************************
+
+Troubleshooting kubernetes Cluster 
+=======================================
+
+Troubleshooting tools 
+---------------------------
+
+1) kubectl logs 
+2) kubectl events 
+3) systemctl 
+4) journalctl
+5) system logs 
+
+
+troubleshooting - Nodes 
+---------------------------
+
+1) Server online 
+2) Network reachability 
+3) systemd
+4) container runtime 
+5) kubelet 
+6) kube-proxy
+
+
+Get Status of the system unit 
+-------------------------------------
+
+** systemctl status kubelet.service 
+** systemctl enable kubelet.service
+** systemctl start kubelet.service
+
+# systemd unit configuration - /etc/systemd/system/kubelet.service.d/10-kubeadm.conf 
+
+
+DEMO Troubleshooting Worker Nodes  
+-----------------------------------------
+
+# Worker Node troubleshooting Scenario 1 
+# We have ran a script which has broken our Worker Node
+
+** kubectl get nodes 
+
+# ssh to the faulty node 
+
+** sudo systemctl status kubelet.service
+
+# if not configured to start up by default we can enable it 
+
+** sudo systemctl enable kubelet.service
+** sudo systemctl status kubelet.service 
+** sudo systemctl enable kubelet.service
+
+# Log out of the workder node and login in to master node and see if the nodes is healthy 
+
+** kubectl get nodes
+
+# Worker Node troubleshooting Scenario 2
+# ssh on to the faulty node 
+
+** sudo systemctl status kubelet.service --no-pager 
+
+# systemd based system writes logs to Journald, lets ask it for the logs for the kubelet 
+# This will tusll us exactly what's wrong . the failed to load te kubelet config 
+# which it thinks is at /var/lib/kubelet/config.yaml and let's see if it exists there or not
+
+** sudo journalctl -u kubelet.service --no-pager 
+** sudo ls -la /var/lib/kubelet/
+
+# so after fixing the error and restarting the kubelet 
+
+** sudo systemctl status kubelet.service
+
+# Log out of the workder node and login in to master node and see if the nodes is healthy 
+
+** kubectl get nodes
+
+# Worker Node troubleshooting Scenario 3
+# ssh on to the faulty node 
+
+** sudo systemctl status kubelet.service --no-pager 
+
+# using journalctl we can pull logs ... this time it's looking for config.yaml...
+
+** sudo journalctl -u kubelet.service --no-page
+
+# Let's reconfigure where the kubelet looks for this config file 
+# Where is the kubelet config file specified ?, check the systemd unit config for the kubelet 
+# where does the systemd think the kubelet's config.yaml is ?
+
+** sudo systemctl status kubelet.service --no-pager 
+** sudo more /ect/systemd/system/kubelet.service.d/10-kubeadm.conf
+
+# Let's update the config args , inside here is the startup configuration for the kubelet 
+
+** sudo vi /etc/systemd/system/kubelet.service.d/10-kubeadm.conf 
+
+# Let's restart the kubelet 
+
+
+
+DEMO Troubleshooting Contolr Plane/Master Nodes  
+------------------------------------------------------------
+
+# Troubleshooting Scenario 1 - Inaccessible Static Pod Manifests
+# We have ran a script which has broken our Control-Plane/Mster Node
+
+# Lets check the status of our control plane pods... refused 
+# it can take a bit to break the master node wait untill connection to server was refused 
+
+** kubectl get pods --namespace kube-system
+
+# Let's ask our container runtime, what's up ..well there'pods running on this node, but no control plane pods.
+# thats your clue .. no control plane pods running ..what starts up the control plane pods .. statuc pod manifests 
+
+** sudo docker ps 
+
+# let's check the config.yaml for the location of the static pod manifests 
+# look for the staticPOdPath 
+# do the yaml files exist at that location ?
+
+** sudo more /var/lib/kubelet/config.yaml
+
+# the directory dopesn't exist ...oh! no,let's look up one directory... (somebody chnaged the name of the manifest directory)
+
+** sudo ls -laR /etc/kubernetes/manifests 
+** sudo ls -laR /etc/kubernetes/
+
+# We could update config.yaml to point this path or rename it to put the manifess in the configured location.
+# the kubelet will find theese manifests and launch the pods again 
+
+** sudo mv /etc/kubernetes/manifests.wrong /etc/kubernetes/manifests
+** sudo ls /etc/kubernetes/manifests
+ 
+# check the container runtime to ensure the pods are started ... we can see they were created and running just a few seconds ago
+
+** sudo docker ps 
+
+# Let's ask kubernetes what it thinks 
+
+** kubectl get pods -n kube-system
+
+# Troubleshooting Scenario 2 - Misconfigured Static Pod Manifests
+# break the control plane/Master Node 
+
+# Let's start a workload
+
+** kubectl create deployment nginx --image=nginx
+** kubectl scale deployment nginx --replicas=4
+
+# Interesting, all of pods are pending ..why ?
+
+** kubectl get pods 
+
+# Nodes look good ? yes, They are all reporting ready.
+
+** kubectl get nodes
+
+# Let's look at the pod's events..<none> nothing, so no scheduling, no image pulling, no cotainer starting ..
+
+** kubectl describe pods
+
+# what's the next step after the pods are created by replication controler ? Scheduling ...
+
+** kubectl get events --sort-by='metadata.creationTimestamp
+
+# So we know there's no scheduling events, so let's check the control plane status ... the schedulr isn't listening 
+
+** kubectl get componenetstatuses
+
+# AH, the scheduler pod is reporting ImagepullBackOff 
+
+** kubectl get pods --namespace kube-system 
+
+# Lets check the events on that pod .. we can see if failed to pull the image for the scheduler, says image not found
+# Looks like the manifests is trying to pull an image that doesn't exist 
+
+** kubectl describe pods --namespace -kube-system <kube-scheduler-master_node>
+
+# That's defined in the static pod manifest
+
+** sudo vi /etc/kubernetes.manifests/kube-scheduler-master_node.yaml
+
+# is the scheduler back online, yes it's running 
+ 
+** kubectl get pods --namespace -kube-system
+** kubectl get componenetstatuses
+** kubectl get deployment 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

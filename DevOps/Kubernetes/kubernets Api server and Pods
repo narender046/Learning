@@ -1,0 +1,646 @@
+kubernetes API server and Pods (Running and managing)
+=================================================================
+
+1) Kubernetes API --> The Kubernetes API lets you query and manipulate the state of API objects in Kubernetes(example: Pods, Namespaces, ConfigMaps, and Events).
+				      Most operations can be performed through the kubectl command-line interface or other command-line tools, such as kubeadm, which in turn 
+					  use the API. However, you can also access the API directly using REST calls.
+
+2) Kubernetes API server --> a) It has a client server architecture
+                             b) It implements Restful API over HTTP using JSON
+							 c) A client submits requests over HTTP/HTTPS
+							 d) Server responds to the requests
+							 e) The API server itself is stateless (meaning - any configuration chnages are not sored in API server)
+							 f) The config chnages are serialized and persisted in the cluster store(etcd)
+
+The cluster Control Plane Node consistes of the below important things :
+------------------------------------------------------------------------------------------
+1) API server           --> This is the primary access point for adminstrative and cluster operations. this is teh communications hub of the entire K8 system.
+2) Cluster store (etcd) --> This is where the state of the system is store and persisted in a key value data store
+3) Scheduler            --> It tells k8 which nodes to start pods on based on pods resource requirement and workloads.
+4) Controller Manager   --> it has a job of implementing lifecycle functions of controllers, basically maintaining the desired state.
+
+Kubernetes API Objects
+---------------------------------------------
+
+1) These are the persistent entities allow to build and deploy systems in kubernetes. These are the thing which we will use in code to model out system and we will be 
+   sending that code in API server. Through API server the configuration will be stored in Cluster store (etcd). 
+   
+2) Kubernetes API Objects are the things that represents the state of our system that we want to build.
+
+3) Kubernetes API Objects are organised in 3 ways:
+   a) kind - Pod, service, Deployment, persistent volumes 
+   b) Group - core, apps, storage
+   c) Version - v1, beta, alpha 
+
+Working with Kubernetes Objects:
+
+1) Imperative configuration
+	 - running a series of commands at command line
+	 - working with one operation and onject 
+	 
+2) Declarative configuration
+     - define our desired state in code
+	 - Using manifests 
+	 - using YAML or JSON
+	 
+using kubectl dry-run parameter
+----------------------------------------
+
+Server side 
+ - processed as a typical requests
+ - request will not be persisted in storage 
+ 
+** kubectl apply -f deployment.yaml --dry-run=server --> this will send the manifest deployment.yaml to API server for server side validation of the objects defined
+                                                         in the manifest. So this could be deployments, services , etc. 
+ 
+Clinet side 
+ - Writes the objects to be created to stdout 
+ - validate manifests syntax
+ - Great for generating for syntatically correct YAML manifests
+
+** kubectl apply -f deployment.yaml --dry-run=clinet --> this will validate the syntax of the objects defined in manifest and will not send the manifest to API server
+
+
+** kubectl create deployment nginx --image=nginx --dry-run=clinet -o yaml --> o here is for output and this command will generate the file on standard output
+
+** kubectl create deployment nginx --image=nginx --dry-run=clinet -o yaml > deployment.new.yaml 
+
+
+kubectl diff
+====================
+
+1) It generates the difference between resources running in the cluster and resources defined in manifest or once passed in via stdin. When this command is executed 
+   it will printout (stdout). So we can easiy kno what gonna change when we apply the deployment 
+
+** kubectl diff -f newdeployment.yaml 
+
+
+DEMO: API server Discovery, listing resources, using kubectl explain and creating Objects
+===========================================================================================
+
+#API Discovery
+#Get information about our current cluster context, ensure we're logged into the correct cluster and listing
+
+** kubectl config get-contexts 
+
+#Chnage our context if needed by specifing the nmae
+
+** kubectl config use-context <context-name>
+
+#Get information about the API server for our current context.
+
+** kubectl cluster-info
+
+#To liats the API resources available in the cluster 
+
+** kubectl api-resources | more 
+
+# To explan and see structure of a resource ..specifically it's field
+
+** kubectl api-resources | more
+
+# To look more closely at what we need in pod.spec and pod.sec.containers (image and name required)
+
+** kubectl explain pod.spec | more
+** kubectl explain pod.spec.containers | more
+
+# To check out with a pod YAML
+
+** kubectl apply -f pod.yaml 
+
+# To generate the pod manifest using dry run
+
+** kubectl run pod nginx-pod --image=nginx --dry-run=clinet -o yaml |more
+** kubectl run pod nginx-pod --image=nginx --dry-run=clinet -o yaml > deployment-generated.yaml
+**  more deployment-generated.yaml
+
+
+# orking with kubectl diff
+# create a deployment with 4 replics
+** kubectl apply -f deployment.yaml
+
+# Diff that with deployment with 5 replicas and a new container image ( you will see other metadat about the object)
+**kubectl diff -f deployment.new.yaml | more
+
+********************************************************************************************************************************************************************
+API Groups
+=================================
+
+1) API groups enable better organization of resources in k8 API
+2) 2 high level API Groups
+   a) Core API (Legacy group) ---> example pods, nodes, Namespaces, PersistentVolume, PersistentVolumeclaim
+   b) Named API group (here named API group becomes path of URL in requests)----> example below 
+   apps - Deployment 
+   storage.k8s.io - StorageClass
+   rbac.authorization.k8s.io - Role 
+   
+3) API is versioned at API level and it provides us stability for existing implementations
+4) Released in Alpha ---> Beta----> Stable
+
+# Check API server and API resource 
+
+** kubectl api-resources | more
+
+# A list of objects available in a specific API groups such as apps
+
+** kubectl api-resources --api-group=apps
+
+# We can use explain to dif further into specific API resource and versioned
+
+** kubectl explain deployment --api-version apps/v1 | more 
+
+# Print the supported API versions and Groups on the API server again in the form group/version
+
+** kubectl api-versions | sort | more
+
+
+Anatomy of an API request: API Griups and versions:
+===========================================================
+
+how opertaions happen in Kubernetes (APi server)
+
+API Request ---> API path ----> Read/Write Objects to/from Cluster store ----> Send Response back to clinet 
+
+1) it is a Client Server architecture
+2) Http based Restful API
+3) HTTP verb
+4) Resource location (URL/Path)
+5) Request = Verb + Resource Location
+6) Response Code
+
+API Verbs : 
+
+1) GET --> Get the data for a specified resources
+2) POST -->    Create a resource
+3) Delete -->  Delete a resource 
+4) PUT --> Create or update entire existing resource 
+5) PATCH --> Modify the specified fields of a resource 
+
+Special API Requests
+===========================
+
+1) LOG --> Retrieve logs from a container in a pod.
+2) EXEC --> Exec a command in a container to get the output
+3) WATCH --> Change notifications on a resource with streaming output. Each resource has a resource version associated with it and watches are started on that version
+             Notifications are sent to clinets watching thatversion
+
+API Resource Location(API paths) and API responses codes
+============================================================
+ 
+1) Core API (Legacy)
+
+http://apiserver:port/api/$VERSION/$RESOURCE_TYPE
+
+http://apiserver:port/api/$VERSION/namespaces/$NAMESPACE/$RESOURCE_TYPE/$RESOURCE_NAME
+
+2) Named API (GROUPs)
+
+http://apiserver:port/apis/$GROUPNAME/$VERSION/$RESOURCE_TYPE
+
+http://apiserver:port/apis/$GROUPNAME/$VERSION/namespaces/$NAMESPACE/$RESOURCE_TYPE/$RESOURCE_NAME
+
+
+Response Codes from the API Server
+======================================
+
+Success (2xx)        |Client Errors (4xx)       |   Server Errors (5xx)         |
+--------------------------------------------------------------------------------|
+200 - OK			 |	401 - Unauthorized		|	500 - Internal Server Error |
+					 |							|							    |
+201	- Created		 |  401 - Access Denied     |                               |
+					 |                          |                               |
+202 - Accepted		 |  404 - Not Found         |                               |
+
+
+how API works 
+
+
+                Connection                Authentication                     Authorization           Admission Control
+Client        ------------------->   ---------------------------->  -------------------------->  ------------------------->              Server
+Request        Can you make a      | Are you a valid user ?       |  Can you perform requested  |  Administrative Control                Response                                                                            Response 
+                 Connection?       |                              |     action?                 |       over request
+                                   | Authentication plugin        |   							|  
+			   HTTP over TCP       |                              |   Verb or Resource          |   Additional Code
+			                       | Modular(certificates, tokens)|                             |
+			   TLS Encrypted       |                              |    Default Deny             |   May modify Object 
+                                   |  if faled then 401 error     |                             |
+                                   |                              |                             |    Validation         
+
+
+# Creating a Pod with YAML
+** kubectl apply -f pod.yaml 
+
+# Get a list of our currently running pods
+** kubectl get pod <pod-name>
+
+# we can use -v option to increase the verbosity of our request
+** kubectl get pod <pod-name> -v 6
+
+# Start up a kubectl proxy session, this will authenticate use to the API Server
+# Using our Local kueconfig for authentication and settings 
+
+** kubcetl proxy & 
+curl http://localhost:8081/api/v1/namespaces/default/pods/static-web | head -20
+fg
+ctrl + c
+
+# Watch, Eexc and Log request
+** kubectl get pods --watch -v 6 &
+
+# we can see the kubectl keeps the TCP session open with the server .. waiting for data.
+** netstat -plant | grep kubectl 
+
+# Accessing Logs 
+** kubectl logs static-web
+** kubectl logs static-web -v 6
+
+# Start kubectl proxy &
+curl https://localhost:8001/api/v1/namespaces/default/pods/static-web/log
+
+# kill our proxy, fg then ctrl + c 
+fg
+ctrl + c
+
+*****************************************************************************************************************************************************************
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

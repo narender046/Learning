@@ -1,0 +1,598 @@
+Kubernetes Ingress
+=============================
+
+Ingress architecture 
+-----------------------
+
+1) Ingress Resource - it defines http service in a cluster can be externally. These are rules
+2) Ingress Controller - This implements the Ingress Resources or the rules. this actually provides access to cluster based services.
+                        This is a HTTP reverse proxy - recieves connection , finds a matching rule and passes directly to the services pod endpoint
+3) Ingress Class - in the cluster we may have more than one Ingres controller, it give you the ability to associate and ingress resource 
+                   with a specific Ingress cluster in a clsuter
+
+ a) Deploy an Ingres Controller
+ b) Create an class for an Ingress controller 
+ c) then define the ingress resources referencing ingress calsees and routing rules
+
+Ingress overview 
+-------------------
+
+1) Ingress Resource 
+2) Defining rules for external access to services 
+3) Load balancing to endpoints 
+4) Name based Virtual hosts 
+5) path based routing 
+6) TLS termination
+
+Ingress Controller
+======================
+
+1) Implements the rule defined in the ingress Resource 
+2) many types of Ingres controller 
+   a) Pods in a cluster - nginx 
+   b) hardware external to the cluster - ctrix, F5 and more 
+   c) Cloud Ingress Controllers - AppGW, Google Load Balancer and AWS ALB Ingress 
+3) Ingress controllers have a defined spec
+
+
+Why Ingress rather than Load balancers ?
+----------------------------------------------
+
+1) they are in layer 7 
+2) path based routing 
+3) name-based virtual hosts 
+4) higher level capabilities 
+5) Single serource 
+6) Reduced latency 
+
+
+Exposing a Single Service with Ingress 
+-----------------------------------------------------
+
+apiversion: networking.k8.io/v1
+kind: Ingress 
+metadata:
+	name: ingress-single
+spec:
+	ingress Classname: nginx 
+	defaultBackend:
+		service:
+			name: hello-world-service-single
+			port: 
+				number: 80
+				
+			
+Exposing a multiple Services with Ingress using Path based routing
+---------------------------------------------------------------------------
+
+spec:
+	ingress Classname: nginx
+	rules: 
+	  - host: path.eample.com
+	    http:
+		  paths:
+		     path: /red
+			 pathtype: Prefix
+			 backend:
+			   service:
+			      name: hello-world-service-red
+				  port:
+				    number: 4242			
+					
+            path: /red
+			 pathtype: Exact
+			 backend:
+			   service:
+			      name: hello-world-service-blue
+				  port:
+				    number: 4242   
+
+         defaultBackend:
+		   service:
+		      name: hello-world-service-single
+			  port:
+			    number: 80
+
+Using Name based Virtaul hosts with Ingress 
+--------------------------------------------------
+
+spec:
+  ingress Classname: nginx
+    rules: 
+	  - host: red.eample.com
+	    http:
+		  paths:
+		   - pathtype: Prefix
+             path: "/"
+			 backend:
+				service: hello-world-service-red
+				port:
+				    number: 4242  
+       - host: red.eample.com
+	     http:
+		  paths:
+		   - pathtype: Prefix
+             path: "/"
+			 backend:
+				service: hello-world-service-red
+				port:
+				    number: 4242  
+
+Using TLS certificates for HTTP Ingress 
+----------------------------------------------
+spec:
+  ingress Classname: nginx
+    tls: 
+	  - host: 
+	      - tls.eample.com
+        secreteName: tls-secrete
+	rules:
+	 - host: - tls.eample.com
+       http:
+		  paths:
+		   - pathtype: Prefix
+             path: /
+			 backend:
+				service: hello-world-service-single
+				port:
+				    number: 80  
+
+
+DEMO deploying a Nginx Ingress Controller
+----------------------------------------------
+
+#Bare metal -  On our on prem cluster: bare metal (NodePort)
+# Lets' make sure that we are in right content and deploy the manifest for the Ingress Controller from the link below 
+https://kubernetes.github.io/ingress-nginx/deploy/
+
+** kubectl config use-context <kubernetes_clsutername>
+** kubectl apply -f ./baremetal/deploy.yaml
+
+
+# Using this manifets, the Ingress controller is in the ingress-nginx namespace but 
+# It will monitor for Ingress in all namespace by default. If can be scoped to monitor namespace if needed
+# Check the status of Pods to see if the ingress controller is online 
+
+** kubectl get pods --namespace ingress-nginx
+
+# Now let's chcek to see if the services is online. This of type NodePort, so do you have an External_IP
+
+** kubectl get services --namespace ingress-nginx
+
+# Check out the ingressclass nginx .. we have not set the default-class so in each our Ingress we will need specify an ingressclass
+
+** kubectl describe ingress nginx 
+
+# if want to make the ingressclass default 
+
+** kubectl describe ingress nginx "ingressclass.kubernetes.io/is-default-class=true"
+
+
+DEMO Exposing a Single Service with Ingress 
+-------------------------------------------------
+
+# Create a deployment, scale it to a 2 replicas and expose it as a service 
+# This service will be a ClusterIP and we will expose this service via the ingress
+
+** kubectl create deployment <deployment_name> --image=<image_name>
+** kubectl scale deployment <deployment_name> --replicas=2
+** kubectl expose deployment <deployment_name> --port=80 --target-port=8080 --type=ClusterIp
+
+# create a single Ingeess routing to the one backend service on the service port 80 listening on all hostnames
+
+** kubectl apply -f ingress-single.yaml
+
+# Get the ststus of the ingress, Its routing for all hostnames on the publisc IP on port 80
+# This is a Nodeport service so there is sno publicc IP, Its NodePort service that you will use for access or integration 
+# If you don't define an ingress classname and don't have default ingress class the address won't be updated 
+
+** kubectl get ingress --watch # wait for the address to be populated before proceeding 
+
+# Notice the backends are the service's Endpoints ...so the traffic is going straight from the Ingress Controller to the nodes in the cluster 
+# Also notice, the default backend is the same service, That's becasue we didn't define any rules and
+# We just populated ingress.spec.backend. we are going to look at the rules next ...
+
+** kubectl descrie ingress ingress-single
+
+# Access the application via exposed ingress that's listening the Nodeport and it's static port, lets get some values
+
+** INGRESSNODEPORT=$(kubectl get ingress ingress-single -o jsonpath='{ .status.loadbalancer.ingress[].ip }' 
+** NODEPORT=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{ .spec.ports[?@.name=="http")].nodePort }')
+** echo $INGRESSNODEPORT:$NODEPORT 
+** curl http://$INGRESSNODEPORT:$NODEPORT
+
+
+DEMO Multiple Services with Path based routing 
+-------------------------------------------------
+
+# let's create two additional services
+
+** kubectl create deployment <deployment_name_1> --image=<image_name>
+** kubectl create deployment <deployment_name_2> --image=<image_name>
+** kubectl expose deployment <deployment_name_1> --port=80 --target-port=80 --type=ClusterIP
+** kubectl expose deployment <deployment_name_2> --port=80 --target-port=80 --type=ClusterIP
+
+# let's create an ingress with paths each routing to differnt backend services 
+
+** kubectl apply -f ingress-path.yaml 
+
+# now we have 2, one for all hosts and the other for or defined host with two paths 
+# the Ingress controller is implementing these ingresses and we are sharing the one public IP, don't procees untill we get the IP
+# the address populated for your ingress 
+
+** kubectl get ingress ingress-path
+
+# We can see the host, the path and the backends 
+
+** kubectl describe ingress ingress-path
+
+# Our ingress on all host is still routing to service, since, we are accessing the URL with and IP and not a domain 
+
+** curl http://$INGRESSNODEPORT:$NODEPORT
+
+# our paths are routing their correct services, if we specify a host header or use a DNS name to access the ingress 
+
+** curl http://$INGRESSNODEPORT:$NODEPORT/red --header 'Host: path.example.com'
+** curl http://$INGRESSNODEPORT:$NODEPORT/blue --header 'Host: path.example.com'
+
+# Example Prefix matches these wil all match and get routed to red 
+
+** curl http://$INGRESSNODEPORT:$NODEPORT/red/1 --header 'Host: path.example.com'
+** curl http://$INGRESSNODEPORT:$NODEPORT/red/2 --header 'Host: path.example.com'
+
+# Example Exact mismatches these wil all 404 
+
+** curl http://$INGRESSNODEPORT:$NODEPORT/Blue --header 'Host: path.example.com'
+** curl http://$INGRESSNODEPORT:$NODEPORT/blue/1 --header 'Host: path.example.com'
+** curl http://$INGRESSNODEPORT:$NODEPORT/blue/2 --header 'Host: path.example.com'
+
+# If we don't specify a path we will get a 404 while specifying a host header 
+# we will need to configure a path and backedn for  / or define default for the service 
+
+** curl http://$INGRESSNODEPORT:$NODEPORT/  --header 'Host: path.example.com'
+
+# Add a backend to ingress listening on path.example.com pointing to a single service 
+
+** kubectl apply -f ingress-default-backend.yaml
+
+# we can see the default backend , and in the rules, the host, the path, and the backends
+
+** kubectl describe ingress ingress-path
+
+# if we hit the default service, single for the undefined  path. we will get a ingress-single service
+
+** curl http://$INGRESSNODEPORT:$NODEPORT/  --header 'Host: path.example.com'
+
+
+DEMO Name based Virtual hosts with Ingress 
+-------------------------------------------------
+
+# let's route the traffic to the services using name based virtual hosts rather than paths 
+
+** kubetcl apply -f ingress-namebased.yaml 
+** kubectl get ingress --watch 
+** curl http://$INGRESSNODEPORT:$NODEPORT/  --header 'Host: red.example.com'
+** curl http://$INGRESSNODEPORT:$NODEPORT/  --header 'Host: blue.example.com'
+
+
+DEMO Using TLS Certificate with Ingress
+----------------------------------------------
+
+# Generate a certificate 
+
+** openssl req -x509 -nodes -days 365 -newkey -keyout tls.key -out tls.crt -subj "/C=US/ST=ILLINOIS/L=CHICAGO/0=IT/CN=tls.example.xom"
+
+# Create a secret with key and the certificate 
+
+** kubectl create secrete tls tls-secret --key tls.key --cert tls.crt 
+
+# Create an ingress using the certificate and key. this uses HTTPS for both / and /red 
+
+** kubetcl apply -f ingress-tls.yaml 
+** kubectl get ingress --watch
+
+# Test access to the hostname ... we need --resolve becasue we haven't registered the DNS 
+# TLS is a lyer lower tha host headers, so we have to specify the correct DNS name
+
+** kubectl get service -n ingress-nginx ingress-nginx-controller
+** NODEPORTHTTPS=$((kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{ .spec.ports[?@.name=="http")].nodePort }')
+** echo $NODEPORTHTTPS
+** curl https://tls.example.com:$NODEPORTHTTPS --resolve tls.example.com:$NODEPORTHTTPS:$INGRESSNODEPORT --insecure --verbose
+
+# Clean up time -- delete all the ingress, depoyment and services .
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

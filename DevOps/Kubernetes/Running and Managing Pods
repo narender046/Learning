@@ -1,0 +1,951 @@
+Running and Managing Pods
+=====================================
+
+What is a Pod ?
+-----------------------
+
+1) Wrapper around your container based application
+2) Running one or more containers in a single pod
+3) A pod has also Resources asscociated with the exceution environment for the application. (ex- environment variables, storage, networking etc)
+4) It is a unit of scheduling (Scheduler schedules the pods in the cluster on the nodes based on the resources that are avilable)
+5) It is a process that's running and consuming resources in your cluster 
+6) Pod is also a unit of deployment ( Deployment defines application configuration and resources like Networking and storage for pods)
+
+
+Why do we need Pods?
+------------------------------
+
+Pods provide higher level of absraction over a conatiner for manageability reasons.
+
+
+Ho do Pods manage Containers
+----------------------------------------------------
+
+1) Single Container Pod - Most Common deployment scenario
+                          Generally a single process running in a container
+						  oftern leads to easier application scaling
+
+
+Relationship with Controllers and Pods
+----------------------------------------------------
+
+1) Controllers keep your apps (pods) in the desired state
+2) Controllers are responsible for starting and stopping the pods according to the configurations.
+3) Controllers make application scaling again according to the configurations.
+4) Controllers help us in Application recovery (desired state concept)
+
+Bare Pods:
+
+1) You dont want to run bare/naked pod whihc is not controlled by controllers such as replicasets, deployment, deamonset etc.
+2) The reason behind the bare/naked pod is that they won't be recreated in the event of failure.
+ 
+
+Static pods:
+
+1) Managed by the kubelet on Nodes 
+2) Static pod manifests
+3) staticPodPath in kubernetes configuration - /etc/kubernetes/manifests
+4) Static pods can be used to start up any other pods not only control plane pods 
+5) staticPodPath is watched by kubelet is configured at - /var/lib/kubelet/config.yaml
+6) Static Pods are managed directly by the kubelet daemon on a specific node, without the API server observing them.
+7) The kubelet automatically tries to create a mirror Pod on the Kubernetes API server for each static Pod. the kubelet watches each static Pod (and restarts it if it fails).
+8) This means that the Pods running on a node are visible on the API server, but cannot be controlled from there
+
+ 
+Working with Pods - Kubectl 
+------------------------------------
+
+# If we want to run a bash shell in a running container in a POD (if single container no need to mention the container name )
+
+** kubectl exec -it <pod_name> --container <container_name> -- /bin/bash
+
+# If we want to check logs in a running container in a POD (if single container no need to mention the container name )
+
+** kubectl logs <pod_name> --container <container_name> 
+ 
+ 
+** kubectl port-forward pod <pod_name> LOCALPORT:CONTAINERPORT
+ 
+# Startup the kubectl get evenets --watch and background it 
+
+** kubectl get events --watch &
+
+# Create a pod .. we can thsee the scheduling , container pulling and container starting 
+ 
+** kubectl apply -f pod.yaml
+
+# Start the Deployment with replica 1. we see the deployment created, scaling the replicaset and the replicaset started 
+
+** kubectl apply -f deployment.yaml
+
+# Scale a deployment to 2 relicas. we see the scaling the replicset and the replicaset starting the second pod
+
+** kubectl scale the deployment <deployment_name> --replicas=2  
+
+# Scale a deployment to 1 relicas. Then pod deletion and killing the container  
+
+** kubectl scale the deployment <deployment_name> --replicas=1 
+ 
+# Executing a command inside the container, we can see the GET and POST API requests through API server.
+
+** kubectl -v 6 exec -it  <pod_name> -- /bin/bash 
+** kubectl -v 6 exec -it  nginx-77c58f65f9-s689t -- /bin/bash
+
+# Let's look at the running container /pod from the process level on Node.
+
+** kubectl get pods -o wide
+** Login to Worker node
+** ps -aux | grep <pod_name>
+**exit 
+
+# Now let's access our pod's aplication directly, without a service and also off the pod network 
+
+** kubectl port-forward <pod_name> 80:8080
+** kubectl port-forward nginx-77c58f65f9-s689t 80:8080
+
+# delete the deployment and pod 
+
+** kubectl delete deployment <deployment_name>
+** kubectl delete pod Mpod_name>
+
+# Static Pods
+# Qucilky create a Pod manifest using kubectl run with dry-run and -o yaml.. copy that
+
+** kubectl run hello-world --image=apache2 --dry-run=clinet -o yaml --port=8080
+
+# Login to worker node
+# Find the ststic pod path 
+
+** sudo  cat /var/lib/kubelet/config.yaml
+
+#create a Pod manifest in the staticPodPath .. paste the the manifest we created above
+
+** sudo vi /etc/kubernetes/manifests/mypod.yaml
+
+** ls /etc/kubernetes/manifests/
+
+# Log back to control plane node
+# get the list of POds.. the pods name is podename + node name
+
+** kubectl get pods -o wide
+
+# Try to delete the pod 
+
+** kubectl delete pod <pod_name> 
+
+# Remove the static pod manifest on the node
+# now the pod is gone
+
+** kubectl get pods 
+
+**********************************************************************************************************************************************************************
+
+2) Multi Container Pod -- These scenarios for tightly coupled application.
+                          Scheduling process together 
+						  requirement on some shared resources
+						  usually something generating data while the opther process consumes
+
+Yaml manifest for multi-container pods
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: multicontainer-pod
+spec:
+  containers:
+  - image: apache2
+    name: hello-world
+    ports:
+    - containerPort: 8080
+  ...
+  - image: nginx
+    name: hello-world_again
+
+Shared resources inside a Pod - Networking and Storage
+
+Networking 
+-------------------
+
+1) shared loopback interface, used for communication overlocalhost in a pod.
+2) Be mindful of application port conflicts (so containers in a pos should unique ports for thier specifc tasks)
+
+Storage
+--------------------
+
+1) Each container image has it's own file system
+2) Volumes are deined at the Pod level
+3) Shared amongst (volume) the containers in a pod 
+4) mounted into the container's file system
+5) this is the common way for container to exchnage data
+
+# Lets create our multicontainer Pod.
+
+** kubectl apply -f multicontainer-pod.yaml
+
+# lets connect our Pod.. not specifying a name defaults to the first conatiner in the configuration 
+
+** kubectl exec -it multicontainer-pod --/bin/bash
+** ls -la /var/logs
+** tail /var/log/index.html
+** exit 
+
+# Lets specify a container name and access the 2nds container in Pod.
+
+** kubectl exec -it multicontainer-pod --container <containername> --/bin/bash
+** ls -la /usr/share/nginx/html
+** tail /usr/share/nginx/html/index.html
+** exit 
+
+# the application listens on port 80, we will forward from 8080>80
+
+** kuectl port-forward multicontainer-pod 8080:80 &   (& means in background)
+curl http://localhost:8080
+
+**********************************************************************************************************************************************************************
+
+3) Init Container  -- these containers run before the main conatiner application run in the pod.
+                      Contains utilities or setup for apps
+					  Run to completion and then application starts 
+					  can have more that one init container per pod
+					  Each init container runs sequentially
+					  All the init containers must run to successful completion for the pod to start 
+					  when an init container fails... container restartPolicy applies (by default kubelet restart the continer)
+
+When to use init Containers:
+
+1) Run tools or utilities to set up executing environment for main application and these tools and utilities are not requred when application is up and running.
+2) Separation of duties - init containers can ran at high privellage and app containers can run at low privellage
+3) Block Container startup - we can enforce starting of init container before the app conatiner in configuration
+
+Pod with init Container 
+------------------------------
+apiVersion: v1
+kind: Pod
+...
+spec:
+  initContainers:
+  - name: init-service
+    image: ubuntu
+    command: [ 'sh', '-c', "echo waiting for service: sleep 2" ]
+  - name: init-database
+    image: ubuntu
+    command: [ 'sh', '-c', "echo waiting for database: sleep 2" ]				  
+containers:
+  - name: app-container
+    image: nginx                   					  
+    
+# use watch to watch the progress 
+# each init container run to completion then the app container will start and the pod staus chnages to Running
+
+** kubectl get pods --watch &
+
+# Create the POD with 2 init containers...
+# each init container will be processed serially untill completion before the main application conatiner is started
+
+kubectl apply -f init-containers.yaml 
+
+# Review the init container section and you will see each container state is "terminated and completed'
+# Looking at the events.. you should see each container starting serially
+# and then application container starting last once the others have completed 
+
+** kubectl describe pods init-containers | more
+
+# Delete the pod
+
+** kubectl delete -f init-containers.yaml 
+
+**********************************************************************************************************************************************************************
+
+Pod Lifecycle, Stopping/terminating Pods and Persitency of Pods
+---------------------------------------------------------------------
+
+Pod Lifecycle
+=================
+
+1) 3 phases ----> a) Creation  ---> Administratively started by  or user, Controller
+                  b) Running  ---> Scheduled to A Node
+				  c) Termination ---> Process is terminated/crashed, Pod is deleted, Evicted due to lack of resources, No pods are redeployed
+				  
+Stopping/terminating :
+
+1) grace Period Timer (30 seconds default) (grace period time is configurable attribute)
+2) Pods chnages to terminating 
+3) SIGTERM
+4) Service Endpoints and controllers updated 
+5) IF > Grace Period then SIGKILL
+6) API and Etcd are updated 
+
+** kubectl delete pod <pod_name> --grace-period=<seconds>
+
+** kubectl delete pod <pod_name> --grace-period=0 --force (Immediately deletions)
+				  
+				  
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+spec:
+  terminationGracePeriodSeconds: 10
+  containers:
+    - image: nginx
+      name: nginx
+     
+
+Persistency of Pod
+-----------------------
+
+1) A pod is never redeployed 
+2) if a pods stops, a new one is created based on its controller 
+3) Go back to the original container images in the pod definition
+
+Persistency can be managed by configuration externally 
+Pod manifests, secrests and ConfigMaps 
+Passing environment varibales into containers 
+Data peristency is managed externally by volumes in Pods -- PersistentVolume PersistentVolumeClaim
+
+Container Restart policy 
+---------------------------
+1) A container in a Pod can restart independent of the Pod 
+2) Applies to containers inside a Pod and define the Pods' sepc
+3) the pod is the environment the container runs in 
+4) Not rescheduled to another Node, but restarted by the kubelet on that Node
+5) Restarts with an exponential bacoffs, 10s, 20s, 40s capped at 5m and reset to 0 after 10m of successful runtime (s=seconds, m=minutes) 
+6) 3 configurations
+ a) Always (defaults) - will restart all containers inside a Pod
+ b) OnFailure - Non-graceful termination
+ c) never - never restrtart in pod
+ 
+Example 1:
+---------------
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+spec:
+  terminationGracePeriodSeconds: 10
+  containers:
+    - image: nginx
+      name: nginx
+  restartPolicy : OnFailure
+  
+Example 2:
+--------------- 
+  
+apiVersion: v1
+kind: Pod
+metadata:
+  name: learning-restartPolicy_with_OnFailure
+spec:
+  containers:
+    - name: web-server
+      image: nginx
+    restartPolicy: OnFailure
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: learning-restartPolicy_with_never
+spec:
+  containers:
+    - name: web-server
+      image: nginx
+    restartPolicy: never
+
+
+#to kill the app process inside our container Create a pod ... we can see the scheduling, container pulling and container starting
+
+** kubectl apply -f pod.yaml
+
+# we have used exec to launch a shell before, but we can use it launch any program inside a container 
+# Let's use killall 
+
+** kubectl exec -it <pod_name> --/bin/bash
+** ps 
+** exit 
+
+# Our restart count increased by 1 after the container needed to be restarted 
+
+** kubectl get pods 
+
+# Look at container -> state, Last state , reason, Exit Code, restart counts and events 
+# this is because the container restart policy is Always by default 
+
+** kubectl describe pod <pod_name>
+
+# cleanup time
+
+** kubectl delete pod <pod_name>
+
+# we can ask the API server what it knows about an Object.. in this case restartPolicy 
+
+** kubectl explain pods.spec.restartPolicy 
+
+# Create our pods with restartPolicy and check Pods 
+
+** kubectl pod-restart-policy.yaml
+** kubectl get pods 
+
+# let's kill the process in our pods and see how the container restart policy reacts 
+
+** kubectl exec -it <pod_name> --/usr/bin/killall <container_name>
+** kubectl get pods 
+
+# Review container state, reason, exit code, ready and conditions ready, ContainerReady 
+
+** kubectl describe pod <pod_name> 
+
+# cleanup time 
+
+** kubectl delete pod <pod_name>  
+** kubectl delete pod <pod_name> 
+
+**********************************************************************************************************************************************************************
+
+Defining Pod health
+-------------------------
+
+1) A pos is considered ready when all the containers are ready 
+2) but we would like to be able to understand a little more about our applications
+3) we can add additionla intelligence to oyur Pod's state and health 
+4) there a re 3 types of probes : a) livenessProbe
+                                  b) readinessProbe
+								  c) startupProbe
+
+
+
+livenessProbe
+=================
+
+1) continously runs a diagonstic check on container in the pod
+2) it's a per container setting (in case of multicontainer we have to make the settings for each container)
+3) On failure the kubelet restarts the container as per the restart policy 
+4) it gives kubernetes a better understanding of our application so that it can react porperly if things go wrong
+
+
+readinessProbe
+=================
+
+1) continously runs a diagonstic check on container in the pod during the lifetime of the pod to determine if the pos is ready to receive the traffic from k8 service.
+2) it's a per container setting (in case of multicontainer we have to make the settings for each container)
+3) if defined we won't receive traffic from a service untill it succeeds 
+4) on failure, removes Pod from load balancing
+5) This probe is sued to protect application containers that temporarily can't respond to requests
+6) it will remove the faulty endpoint so user don't see any errors 
+
+
+startupProbe
+=================
+1) It run a diagonstic check on container during pod startup
+2) Ensuring all containers in a Pod are ready 
+3) it's a per container setting (in case of multicontainer we have to make the settings for each container)
+4) On pod startup, all other probes are dsabled untill the startupprobe is succeeds
+5) On failure, the kubelet restarts the container according to the container restart policy 
+6) we can have startup porbes for applications have long startup time 
+7) it has complimented liveness and readiness probes
+
+
+Types of Diagostic Checks for probes 
+----------------------------------------------
+
+1) 3 primary checks 
+ a) Exec  - this measures process exit code ( when a command is executed in the container and then it checks for the exit code for the same)and reposnds 
+            if our app is healthy or not 
+ b) tcpSocket - if we are able to open a TCP socket (port) on the container where we want to check 
+ c) httpGet - this check for the url on the container and looks for the result if  the return code is >= 200 and < 400 the check is pass 
+ 
+for the above checks thera re three potential outcome 
+----------------------------------------------------------
+
+1) Success 
+2) Failure
+3) Unknown 
+
+Configuring Container Probe (configuration points)
+===================================
+
+1) initialDelaySeconds - number of seconds after the container has started before it starts running container probes, default is 0. 
+                         This is helpful if we want our applications to startup before we start them checking 
+
+2) periodSeconds - probe interval- the checks will run after an interval, default 10 seconds 
+
+
+3) timeoutSeconds - this is the wait time before the check declare the result as fails
+
+3) failureThreshold - number of checks failed in a row to confirm the check has failed. default is 3
+
+4) successThreshold - number of probes to be considered as successful and live after failureThreshold. default is 1 
+
+
+demo livenessProbe and readinessProbe
+===========================================
+spec:
+ containers:
+   ...
+   livenessProbe:
+     tcpSocket:
+	   port:8080
+	 initialDelayseconds: 15
+	 periodSeconds : 20
+   readinessProbe:
+     tcpSocket:
+	   port:8080
+	 initialDelayseconds: 5
+	 periodSeconds : 10 
+
+
+demo startupProbe
+========================
+
+spec:
+ containers:
+   ...
+   startupProbe:
+     tcpSocket:
+	   port:8080
+	 initialDelayseconds: 10
+	 periodSeconds : 5
+
+
+# set up the liveness and readiness probe 
+
+** kubectl apply -f containers-probe.yaml
+** kubectl get pods
+
+# We can see in the evenets. The liveness and readiness probe failures
+# Under containers, Liveness and readiness, we can see current configurations.
+# Under containers, readyand container conditions, we can see that the container isn't ready.
+# Our container port is 8080, that's what we want our probes, probings 
+
+** kubectl describe pods 
+
+# set up the startup probe 
+
+** kubectl apply -f containers-probe-startup.yaml
+** kubectl get pods
+
+***********************************************************************************************************************************************************************
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 

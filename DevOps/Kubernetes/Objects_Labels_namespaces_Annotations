@@ -1,0 +1,371 @@
+Managing Objects with Labels, Annotations and Namespaces
+=====================================================================
+
+Organization Objects in Kubernetes:
+------------------------------------
+1) Namespaces -- When we want to put an boundary on Objects in terms of naming, security or resource allocation.
+  a) It gives you the ability to subdivide a cluster and its resources
+  b) Conceptually a "virtal cluster" called Namespaces
+  c) To Deploy objects into namespace
+  d) Primary reason of namespaces is - Resourceisolation/organiation insied the cluster (Prod, QA, stage environemts, Users, app owners, business stack etc)
+  e) Security boundary for Role based Access Conrol
+  f) Naming boundary ( we can have a resource with same name in 2 different namespaces )
+  g) kubernetes namespaces has nothing to do with Linux namespaces 
+
+Working with Namespaces
+--------------------------------------
+1) Create/Query/delete
+2) Operate on Objects in a Namespace
+3) Some Objects are namespaced ans some aren'terms
+4) Resources in namespaced --> pods, Controllers, Servcies 
+5) Resources in namespaced --> PersistentVolumes, Nodes (generally physical things)
+
+Default Namespaces
+---------------------
+1) default    --> If you deploy any respurces and don't specify any namespace, those resources will be allinged in default Namespace
+2) kube-public --> This is created automatically and readable by all users in cluster. It is used to store objecte shared b/w different namespaces for access across cluster. 
+3) kube-system  --> all the system pods resides here, API server, controllers etc
+4) User Defined --> a) imperstive with kubectl
+                    b) Declaratively in a manifest in YAML
+
+# Creating a namespace 
+
+** kubectl create namespace <namespace_name>
+
+# Creating Objects in a namespace 
+
+** kubectl run nginx --image=nginx --namespace <namespace_name> 
+
+# To get a list of all the namespaces in our cluster
+
+** kubectl get namespaces 
+
+# To geta list of all the API-Resources and if they can be in a namespace
+
+** kubectl api-resources --namespaced=true | head
+** kubectl api-resources --namespaced=false | head
+
+# Namespace has state, Active and terminating (when it's deleting)
+
+** kubectl describe namespaces
+
+# Descrie the individula namespace (for example kube-system)
+
+** kubectl describe namespaces kube-system
+
+# get all the pods in our cluster across all namespaces.
+
+** kubetcl get pods --all-namespaces 
+
+# Get all resources across all of our namespaces
+
+** kubetcl get all --all-namespaces 
+
+# get all the pods in our cluster in kube-system namepasce
+
+** kubetcl get pods --namespaces kube-system
+
+# Imperatively create a namespace
+
+** kubectl create namespace <namespace_name>
+NOTE - Impereatively create a namespace but with some character restriction (only lowerc case and dashes allowed)
+
+# Decratively create a namespace
+
+** more namespace.yaml
+** kubectl apply -f namespace.yaml
+
+# Creating resource imperatively 
+
+** kubectl run nginx-pod --image=nginx --generator=run-pod/v1 --namespace <namespace_name>
+
+# Checkings the pods and in a particluar namespace
+
+** kubectl get pods 
+** kubectl get pods --namespace <namespace_name>
+** kubectl get pods --n <namespace_name>
+
+# get a list of all the resource in a particluar namespace
+
+** kubectl get all --namespace=<namespace_name>
+
+# Delete all of the pods in a particluar namespace
+
+**kubectl delete pods --all-namespaces <namespace_name>
+
+# Delete all the resources in the namespace and the namespace and delete our other created namespace.
+# this deletes the deployment controller, the pods or eally all resources in the namespaces.
+
+** kubectl delete namespaces <namespace_name>
+
+# List all resources in all namespaces
+
+** kubetcl get all --all
+** kubetcl get all --all-namespaces 
+
+********************************************************************************************************************************************************************
+
+2) Labels -- When we want to act on an object or groups of objects or influence internal kubernetes operations
+ a) Used to organise resources - Pods, Nodes and more
+ b) Label Selectors are used to select/query Objects
+ c) Return collections of Objects that satisfy search conditions 
+ d) Enables you to perform operatiosn on a colection of resources ..like pods.
+ e) Lables also influence internal operations of kubernetes 
+ f) lables is s a not hierarchical, key/value pair 
+ g) Onjects in Kubernetes can have more that one label 
+ h) It enables more complex repersentations of state and ability to query
+ i) keys can be 63 characters or less
+ j) values can be 253 characters or less 
+ 
+Using labels:
+--------------------------------------
+
+1) creating resources with labels 
+ a) Imperatively with kubectl 
+ 
+** kubectl label pod nginx tier=PROD app=v1
+** kubectl label pod nginx tier=PROD app=v1 --overwrite (if we want to change label details which already exists)
+** kubectl label pod nginx app- (the key app is getting removed here)
+ 
+ b) Declaritively in a Manifest in YAML (example below)
+ 
+apiVersion: v1
+kind: Pod 
+metadat:
+ name: nginx-pod
+ labels
+	apps: v1
+	tier: PROD
+spec:
+....
+ 
+2) Editing existing resources's Labels
+ a) Assign(add) a new label
+ b) Overwriting an existing Label
+
+Querying Using Labels and Selectors 
+
+** kubectl get pods --show-lables
+** kubectl get pods --selector  tier=prod
+** kubectl get pods -l 'tier in (prod.qa)'
+** kubectl get pods -l 'tier notin (prod.qa)'
+** kubectl get nodes --show-lables
+
+
+How kubernetes Uses Labels internally
+-------------------------------------------
+
+1) Controllers and servcies match pods using selectors from labels 
+2) Scheduling to specific Nodes 
+3) Special hardware (SSD or GPU)
+4) all these workings and underlying thing is lable selectors 
+
+
+Using lables for Services, Deployments and Scheduling
+-----------------------------------------------------------------
+deployment. yaml and services.yaml review on how to add lables and selectros:
+
+kind: Deployments                                      |                       
+....                     							   |                                  
+spec:                                                  |                                   
+ selector:                                             |                                      
+	matchLabels:                                       |                                              
+	 run: hello-world                                  |                                                           
+....                                                   |                                          
+ template:                                             |                                                                                               
+	metadata:                                          |                                       
+	 labels:                                           |                                                              
+		run: hello-world                               |                                              
+    spec:                                              |                                            
+		container:                                     |                                                           
+...
+
+kind: Service                                      |                       
+....                     							   |                                  
+spec:                                                  |                                   
+ selector:                                             |                                                                            |                                              
+	 run: hello-world 
+
+
+# Create a collectionof pods with lables and assigned to each and deploy it 
+
+** more create_multiple_pods.yaml
+** kubectl apply -f create_multiple_pods.yaml
+
+# Look at all the Pod lables in our cluster 
+
+**  kubectl get pods --show-labels 
+
+# Looka at one Pod lalbel in our cluster
+
+** kubectl descrive pod <pod_name> | head
+** kubectl get pod <pod_name>  --show-labels
+
+# Working with querying labels and selectors 
+
+** kubectl get pods --selector tier=prod
+** kubectl get pods --selector tier=qa
+** kubectl get pods -l tier=prod
+** kubectl get pods -l tier=prod --show-labels 
+
+# Selector for multiple labels and adding on show -lables to see those lables in the output
+
+** kubectl get pods -l 'tier=prod,app=Mywebapp' --show-labels
+** kubectl get pods -l 'tier=prod,app=Mywebapp' --show-labels
+** kubectl get pods -l 'tier in (prod, qa)
+** kubectl get pods -l 'tiernotin (prod.qa)'
+
+NOTE: --selector = -l, --namespace = -n, --namespaces = -ns
+
+# Output a particular label in column format
+
+** kubectl get pods -L tier
+** kubectl get pods -L tier,app
+
+# Editing an existing lable
+
+** kubectl label pod <pod_name> tier=non-prod --overwrite
+** kubectl label pod <pod_name> --show-labels
+
+# Adding a new label 
+
+** kubectl label pod <pod_name> <key>=<value>   (note - another is key and value is lable)
+** kubectl label pod <pod_name> --show-labels
+
+# Removing any existing Label
+
+** kubectl label pod <pod_name> <key>- (-sign for remove)
+** kubectl label pod <pod_name> --show-labels
+
+#performing an operation on a collection of Pods based on a label query
+
+** kubectl label pod --all tier=non-rod --overwrite ( this command will all a lable tier = non-prod in all the pods in default namespace)
+** kubect get pod --show-labels 
+
+# deleting all pods matching our non-prod label
+
+** kubectl delete pod -l tier=non-prod 
+
+# kubernetes Resource management
+# start a deployment with 3 replicas and expose it as a service.
+
+** kubectl apply -f deployment.yaml 
+** kubectl apply -f service.yaml 
+ 
+# The  deployment has a selector for name = nginx
+
+** kubectl describe deployment <depoloyment_name>
+
+# Looka at the pod template and the labels on the Pods created 
+
+** kubectl describe replicaset <deployment_name>
+
+# The pods have labels for app=nginx for the pod-template-hash of the replicaset
+
+** kubectl get pods --show-labels
+
+# Edit the labels on one of the pods in the replicaset, chnage the pod-template-hsh
+
+** kubectl label pod <pod_name>s pod-template-hash=DEBUG --overwrite
+
+# Let's check how Service use Labels and Selectors, check out services.yaml
+
+** kubectl get service 
+
+# the selector for the service is app=nginx, that pod is still being load balanced to !
+
+** kubectl describe service <service_name>
+
+# Get a list of all the IPs in the service 
+
+** kubectl describe endpoints <service_name>
+
+# get a list of pods and thier Ips
+
+** kubectl get pods -o wide
+
+# To remove a pods from load balancing , chnage the label used by service's selector 
+# the replicaset wull respond by placing another pod in replicaset
+
+** kubectl get pods --show-labels
+** Kubectl label pod <pod_name> app=DEBUG --overwrite
+
+# Look ate the registered the endpoint address. 
+
+** kubectl describe endpoints <servicename>
+
+
+# to clean up 
+
+** kubectl delete deployment <deployment_name>
+** kubectl delete service <service_name>
+** kubectl delete pod <pod_name>
+
+**********************************************************************************************************************************************************************
+
+3) Annotations -- when we want to add or give just little moe meta data about the object or resource. 
+   a) Used to add additional information about your cluster resources
+   b) Mostly Used by people or tooling to make decisions 
+   c) Build, release and image information exposed in easily accesible areas
+   d) saves you from having to write integrations to retrieve data from external data sources
+   e) Non-Hierarchical, key/value pair
+   f) Can't be used to query/select pods or other resources
+   g) data is used for "other" purpose
+   h) keys can be up to 63 characters 
+   i) values can be up to 256 KB 
+   
+declarative implementation of Annotations:
+---------------------------------------------
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-pod
+  annotation: owner:Anthony
+spec:
+ containers:
+  - name: nginx
+    image: nginx
+
+
+imperative implementation of Annotations:
+--------------------------------------------
+
+kubectl annotate pod <pod_name> owner=Anthony
+
+kubectl annotate pod <pod_name> owner=NotAnthony --overwrite
+
+**********************************************************************************************************************************************************************
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

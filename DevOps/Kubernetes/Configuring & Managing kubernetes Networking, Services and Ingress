@@ -1,0 +1,1101 @@
+Configuring & Managing kubernetes Networking, Services and Ingress 
+================================================================================
+
+Kubernetes netwroking Fundamental 
+--------------------------------------
+
+Kubernetes Netwroking Model
+----------------------------
+1) All pods can communicate with each other on all Nodes
+2) Agenst on a Node can communicate with all Pods on that node 
+3) No Netwrok Address translation 
+
+Motivations for the Netwroking Model
+---------------------------------------
+1) Simplicity 
+2) Hingh Implementation details 
+3) Administrator Controlled 
+4) defined in Yaml 
+5) All Pods can communicate to each other
+6) Service Discovery and APP configutaion 
+
+Kubernetes Netwroking Topology
+----------------------------------------
+
+1) Node Network 
+2) Pod netwrok 
+3) Cluster network 
+
+
+Pod netwroking and communication
+--------------------------------------- 
+
+1) Indside a Pod   -- Localhost 
+2) Pod to Pod within a Node  -- Bridge/Tunnel
+3) Pod to Pod on another Node -- Overlay network 
+4) Service 
+
+a) Pod share share a network namespace
+b) Containers in a POd communicate over localhost
+c) Pause/Infrastructure container 
+   1) starts the netwroking namespaces 
+   2) If the application container restarts the network persist 
+   3) Lifecycle of Pod 
+
+Container network interface
+-----------------------------------
+
+1) Standardized networking - 1) It defines a standard specification for managing container networking across multiple container orchestration platforms. it set up 
+                                networking for containers and pods (namepaces, Ip address tunnels ect)
+							 2) In kubernetes CNI plugins are used to Implement kubernets network Model
+							 3) Usually CNI plugins are deployed as Pods controlled by daemonset running on each node in cluster 
+							 4) the kubelet controls the local network configutaion and this configutaion defined Netwrok Plugin 
+
+
+DEMO Investigating Kubernetes netwroking Overview
+------------------------------------------------------
+
+# logging into our master node, get all the IP information, Internal-IP is the real Ip of the node 
+
+** kubectl get nodes -o wide 
+
+# let's deploy a basic workload, hello-worls with 3 replica to create some pods on the pods netwrok 
+
+** kubectl apply -f Deployment.yaml
+
+# get all Pods, we can see each pod has a unique Ip on the Pod netwrok
+# Our Pod netwrok was defined in the first course and we choose 192.168.0.0/16
+
+** kubectl get pods -o wide
+
+# let's hop inside a pd and check out its' netwroking, a single interface an IP on the Pod netwrok
+# The Line below will get a list of Pod from the laebl query and retirn the name of the first pod in the lis 
+
+** PODNAME=$(kubectl get pods --selector=app=hello-world -o jsonpath='{.items[0].metadata.name}]) 
+** echo $PODNAME
+** kubectl exec -it $PODNAME --/bin/bash
+** ip addr 
+** exit 
+
+# Looka at more settings like tunnels, Pods CIDr etc 
+
+** kubectl describe node <master_node> | more 
+
+
+DEMO Investigating Kubernetes netwroking CNI - Overlay Network Routing
+-----------------------------------------------------------------------------
+
+# let's see how traffic goes to master node from worker node
+# Via routed on node, to get to master node traffic goes into tunl0/192.168.19.64, Calico handels the tunnelling  and sends the packet to the correct node to be 
+  send into the Pod running opn that Node
+#Follow eac rout, showing how to get to the Pod IP, it will need to go to the tun0 interface
+  
+** kubectl get pods -o wide
+** route 
+
+# the local tunl0 is 192.168.19.65, packets destined for pods running on worker node will be routed to this interface
+# then send to the destination node for de-encapsulation
+
+** ip addr 
+
+DEMO Investigating Kubernetes netwroking CNI - Kubenet Network Routing (Azure kubernetes service)
+--------------------------------------------------------------------------------------------------
+
+# let's deploy a basic workload, hello-worls with 3 replica to create some pods on the pods netwrok and Internal-IP is the virtual network Ip of the Azure VMS
+
+** kubectl apply -f Deployment.yaml
+** kubectl get pods -o wide
+
+# this time we are using a different a CNI plugin , kubenet. It's based on routes/bridges rather than tunnels . 
+# checkout the address and PodCIDR
+
+** kubectl describe nodes | more 
+
+# The pods getting Ips for thier Node's PodCIDR range
+
+** kubectl get pods -o wide
+
+
+DEMO Investigating Kubernetes netwroking CNI - Accessing an AKS node with SSH 
+----------------------------------------------------------------------------------
+
+# Access and AKS Node via SSH so we can examine it's network config which uses kubenet
+
+** NODENAME=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')
+** kubectl debug node/$NODENAME -it --image=nginx:latest
+
+
+DEMO Investigating Kubernetes netwroking CNI - Kubenet Network Routing and Bridging
+----------------------------------------------------------------------------------------
+
+# Check out the routes, norice to the local pod network matching podCIDR for this node sending traffic to cluster.
+# The routes for the PodCIDR ranges on other Nodes are implemented in the cloud's virtual network
+
+** route
+
+# each pod has veth interface on the bridge, whcih you see here, and the interface inside the container 
+# which will have the POd Ip
+
+** ip addr show 
+
+# let's check out the Bridge's connection
+
+** apt-get install bridge utils 
+** brctl show 
+
+# come out the the VM node and let's check for Pod interface and it's Ip
+
+** NODENAME=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}') 
+** kubectl exec -it $PODNAME -- ip addr 		
+
+# And inside the POd, there is a default route in the pod to the interface 10.244.0.1 which is bidge interface cbr0
+# then the node will route it on the Node network for reachability to other nodes.
+
+** kubectl exec -it $PODNAME -- route
+
+
+Cluster DNS and Custome DNS Server and DNS Client Configuration
+=====================================================================
+
+1) Cluster DNS
+---------------------
+
+1) DNS is available as a service in a cluster 
+2) Pods deployed in the cluster are configured to use this DNS
+3) DNS records are created 
+    a) service - A/AAAA records 
+	b) Namespaces - subdomains
+	c) core to service discovery
+	d) customize both the DNS service and Pods configuration
+	
+Configuring Cluster DNS - Configuring a Forwarder
+------------------------------------------------------	
+apiversion: apps/V1
+kind: ConfigMap 
+metadata:                                       
+  name: core-dns
+  name: kube-system
+data:                                            
+  corefile: 1              		            
+    ..: 53 {                 		           
+	  kubernetes cluster.local in-addr.arpa ip6.arpa {
+         pods insecure
+         fallthrough in-addr.arpa ip6.arpa
+         ttl 30	
+       }		 
+	   forward . 1.1.1.1
+	   ...
+	  }
+
+Configuring Pod DNS - Specifying DNS Server
+--------------------------------------------------
+
+...
+ spec:
+   containers:
+    - name: hello-world
+      image:  nginx 
+      ports:
+       - containerPort: 8080
+      dnsPolicy: "None"
+      dnsConfig: 
+         nameservers:
+		   - 9.9.9.9
+		 searches:
+		   - db1.ns1.svc.cluster.local
+
+
+DEMO Investigating the Cluster DNS Service 
+-----------------------------------------------------
+
+# It's de[ployed as a ser ice in the Cluster with a deployment in the kube system namespace
+
+** kubectl get service --namespace kube-system
+
+# Two replicas, Args injecting the locations of the config file which is backed ConfigMap mounted as a Volume 
+
+** kubectl describe deployment coredns --namespace kube-system | more 
+
+# the configmap defining the coreDns configuration anmd we can see the default forwarder is /etc/resolv.config
+
+** kubectl get configmaps --namespace kube-system coredns -o yaml | more
+
+
+
+DEMO Configuring CoreDNS to use custom Forwards, spaces not tabs!
+----------------------------------------------------------------------
+
+#defaults use the nodes DNS Server for forwarders replace forward . /etc/resolv.conf with forward . 1.1.1.1
+# add additional domain forwarder for a specific domain 
+# configMap will take a seond to update the mapped  file and the config to be reloaded
+
+** kubectl apply -f coreDNSConfigCustom.yaml --namespace kube-system
+
+
+# how will we know when the core dns configuration file is updated in the pod ? you can tail the log looking for the reload the configuration file... 
+  this can take a minute or two
+# Also look for any errors port configuration
+
+** kubectl logs --namespace kube-system --selector 'k8-app=kube-dns' --follow
+
+# Run some DNS queries against the kube-dns service cluster ip to ensure everything works..
+
+** SERVICEIP=$(kubectl get service --namespace kube-system kube-dns -o jsonpath='{.spec.ClusterIP}') 
+** nslookup www.pluralsight.com $SERVICEIP
+** nslookup www.google.com $SERVICEIP
+
+# On maste, let's put the default configuration back, using . forward /etc/resolv.conf
+
+** kubectl apply -f coreDNSConfigDefault.yaml --namespace kube-system
+
+
+DEMO Configuring PodDNS Client configuration 
+--------------------------------------------------
+
+** kubectl apply -f DeploymentCustomDns.yaml
+
+# Let's look at the DNS configuration of a Pod created with that configuration
+# this line will grab the first pod matching the defined selector
+
+** NODENAME=$(kubectl get pods --selector=app=hello-world-customdns -o jsonpath='{.items[0].metadata.name}')
+** echo $PODNAME
+
+
+DEMO Examining Cluster DNS records for Pods and services 
+------------------------------------------------------------
+
+# let's create a deployment and a service, get the IP address of the Pods 
+
+** kubectl apply -f deployment.yaml
+** kubectl get pods -o wide
+
+# get the address of our DNS Service again ... just in case 
+
+** SERVICEIP=$(kubectl get service --namespace kube-system kube-dns -o jsonpath='{.spec.ClusterIP}')
+
+# for one of the pods replace the dots in the IP address with dashes for example 192.168.206.68 becomes 192-168-206-68
+# we will look at some additional examples of the service Discovery in the next module too
+
+** nslookup 192-168-206-68-[XX].default.pod.cluster.local $SERVICEIP
+
+# Our Services also get a DNS A record  there more on service A records in the next demo
+
+** kubectl get service
+** nslookup hello-world.default.svc.cluster.local $SERVICEIP
+
+**********************************************************************************************************************************************************************
+
+Understanding Service in kubernetes 
+=========================================
+
+1) Services provide persistent endpoint access for Clients 
+2) Service Adds persistency to the ephemerality of Pods 
+3) Networking abstraction providing persistent virtual IP and DNS 
+4) Services Load balances to the backend Pods 
+5) Automatically updated during pod container operation
+
+How services work 
+-----------------------------
+
+1) Services match Pods using labels and Selctors 
+2) Creates and registers Endpoints in the Service (Pod Ip and Port pair)
+3) Implemented in the kube-proxy on the Node in iptables
+4) kube-proxy watches the API server and the Endpoints 
+
+
+Kubernetes Services Types
+=============================
+
+1) ClusterIp - 
+
+2) NodePort - 
+
+3) Loadbalancer 
+
+Defining Deployments and servcies 
+-----------------------------------
+
+kind: Deployment
+...
+  template:
+    metadata:
+	  labels:
+	    run: hello-world
+	soec:
+	  containers:
+...	  
+
+
+kind: Service
+...
+  spec:
+	  type: ClusterIP
+	  selector:
+	    run: hello-wporld
+	  ports:
+       - port: 80 
+	     protocol: TCP
+         targetPort:8080
+		 
+** kubectl create deployment <deployment_name> --image=<image_name>
+** kubectl expose deployment <deployment_name> --port=80 --target-port=8080 --type Nodeport
+ 
+
+
+DEMO Exposing and Accessing Services - ClusterIP
+----------------------------------------------------
+
+# Impreatively, create a deployment with one replica
+
+** kubectl create deployment <deployment_name> --image=<image_name>
+
+# When creating a service, you can define a type, if you don't define a typr, the default is ClusterIP
+
+** kubectl expose deployment <deployment_name> --port=80 --target-port=8080 --type ClusterIP
+
+# get a list of service, examine the type, Cluster-IP and Port 
+
+** SERVICEIP=$(kubectl get service <service_name> -o jsonpath='{.spec.ClusterIP}') 
+** echo $SERVICEIP
+
+# get a lsisting of the endpoints for a service, we see the one pod endpoint registered.
+
+** kubectl get endpoints <service_name>
+** kubectl gets pod -o wide
+
+# Access the pods' application directly on the target port on the pod, not the service port, use ful for troubleshooting 
+# Right now there only one Pod and its one Endpoint
+
+** kubectl get endpoints <service_name>
+** PODIP=$((kubectl get service <service_name> -o jsonpath='{.subsets[].addresses.[].ip }')
+** echo $PODIP
+** curl http://$PODIP:8080
+
+# scale the deployment, new endpoints are registered automatically 
+
+** kubectl scale deployment <deployment_name> --replicas=6
+** kubectl get endpoints <service_name>
+
+# Access the service inside the cluste, the time our request will be load balanced .. whoooo! 
+
+** curl http://$SERVICEIP
+
+# The Service's Endpoints match the labels, let's look at the service and its selector and the pod labels.
+
+** kubectl describe service <service_name>
+** kubectl get pods --show-lables
+
+ 
+DEMO Exposing and Accessing Services - Nodeport 
+------------------------------------------------------
+# Impreatively, create a deployment with one replica
+
+** kubectl create deployment <deployment_name> --image=<image_name>	  
+
+# When creating a service, you can define a type, if you don't define a typr, the default is NodePort
+
+** kubectl expose deployment <deployment_name> --port=80 --target-port=8080 --type NodePort
+
+# let's check the service, It also get a clusterIP 
+# the Node Port service is available  on that Nodeport on each Noe in the Cluster 
+
+** kubectl get service 
+** ClusterIP=$(kubectl get service <service_name> -o jsonpath='{.spec.ClusterIP}')
+** PORT=$(kubectl get service <service_name> -o jsonpath='{.spec.ports[].port}')
+** NODEPORT=$((kubectl get service <service_name> -o jsonpath='{.spec.ports[].nodeport}')
+
+# We have only one node pod online supporting our service and we can access the service by hitting the node port on any Node in Cluster on the Node's real IP or Name.
+# This will forward to the cluster IP and get load balanced to a pod. Even if there is only one POD.
+
+** kubectl get pods -o wide 
+** curl http://worker_node1:$NODEPORT
+** curl http://worker_node2:$NODEPORT
+** curl http://worker_node3:$NODEPORT
+** curl http://master_node1:$NODEPORT
+
+# And a Node port service is also listening on a ClusterIp, in fact the NodePort traffic is rpouted to the clusterIP
+
+** echo $ClusterIP:$Port
+** curl http://$CLUSTERIP:$PORT
+
+
+***********************************************************************************************************************************************************************
+
+Service Discovery with DNS and Environment Variable and Other type os services 
+------------------------------------------------------------------------------------
+Key ideas behind kubernetes services 
+
+1) Infrastructure independence 
+2) Avoid Static Configuration 
+
+How can we access Service dynamically in our Cluster (two ways)
+-------------------------------------------------------
+
+1) Service discovery with DNS - Services get DNS record in cluster DNS
+                                  Normal Services get A/AAAA records
+								  <svc>.<nsc>.svc.<clusterdomain>
+								  hello-world.default.svc.cluster.local
+								namespaces get DNS subdomains 
+								  <ns>.svc.<clusterdomain>
+								  ns1.svc.cluster.local
+								Environment variables 
+								  Defined the Pods for each service available at the Pod start up 
+
+Other types of Services 
+============================
+
+1) ExternalName - Service discovery for external services, kubernetes will creta a CNAME record for it 
+
+2) Headless - DNS but NO clusterIP , DNS records for each Endpoint, stateful Applications 
+
+3) Without Selector - map to specific Endpoints, manually create EndPoint Objects , Point to any IP inside or oiutside Cluster 
+
+
+
+DEMO Service Discovery with  DNS
+-------------------------------------
+
+# Let's create a deployment in the default namespace 
+
+** kubectl create deployment <deployment_name> --image=<image_name>	 
+
+# Let's expose the deployment in the default namespace 
+
+** kubectl expose deployment <deployment_name> --port=80 --target-port=8080 --type ClusterIP
+
+# we can use nslookup or dig to investigate the DNS record, it's Cname @10.45.78.65 is the cluster IP of our DNS server.
+
+** kubectl get service kube-dns --namespace kube-system
+
+# Each service egets a DNS record, we can use this in our applications to find service by name.
+# the A record is in the form <servicename>.<namespace>.svc.<clusterdomain>
+
+** nslookup hello-world-clusterip.default.svc.cluster.local 10.45.78.65
+** kubectl get service hello-world-clusterip
+
+# create a namespace, deployment with one replica and service 
+
+** kubectl create namespace ns1
+
+# Let's create the same deployment in the ns1 namespace 
+
+** kubectl create deployment <deployment_name> --namespace ns1 --image=<image_name>	
+
+# Let's expose the deployment in the ns1 namespace 
+
+** kubectl expose deployment <deployment_name> --namespace ns1 --port=80 --target-port=8080 --type ClusterIP
+
+# let's check the DNS record for the service in the name space, ns1. See how the ns1 is in the DNS record 
+# <servicename>.<namepace>.svc.<clusterdomain>
+
+** nslookup hello-world-clusterip.ns1.svc.cluster.local 10.45.78.65
+
+# Our service is sin the default namespace is till there, these are completly unique service 
+
+** nslookup hello-world-clusterip.default.svc.cluster.local 10.45.78.65
+
+
+DEMO Service Discovery with Environment Variable
+-------------------------------------------------------
+
+# get the environment variables for the pods in our default namespace 
+# Only the kubernetes service is available why ? I created the deployment then I created the service 
+
+** PODNAME=$(kubectl get pods -o jsonpath='{.items[0].metadata.name}]) 
+** echo $PODNAME
+** kubectl exec -it $PODNAME --env | sort 
+
+# environment variables are only created at pod start u, so let's delete the pod and check the environment variable again 
+
+** kubectl delete $PODNAME
+** PODNAME=$(kubectl get pods -o jsonpath='{.items[0].metadata.name}]) 
+** echo $PODNAME
+** kubectl exec -it $PODNAME --env | sort 
+
+# External Name 
+
+** kubectl apply -f service-externalname.yaml
+
+# the record is in the form <service>.<namepace>.<clusterdomain>
+
+** nslookup hello-world-api.default.svc.cluster.local 10.45.78.65
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
